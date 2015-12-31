@@ -1,0 +1,63 @@
+https://amplab.cs.berkeley.edu/benchmark/
+
+wget http://www.zlib.net/zpipe.c
+cc -lz zpipe.c -o zpipe
+
+mkdir -p data/text-deflate/5nodes/rankings
+s3cmd get --recursive s3://big-data-benchmark/pavlo/text-deflate/5nodes/rankings/ data/text-deflate/5nodes/rankings
+
+rm -rf data/csv/5nodes/rankings
+mkdir -p data/csv/5nodes/rankings
+for file in data/text-deflate/5nodes/rankings/*
+do
+    target=${file/text-deflate/csv}
+    target=${target/.deflate/.csv}
+    cat $file | ./zpipe -d > ${target}
+done
+
+mkdir -p data/bigcsv/5nodes
+rm data/bigcsv/5nodes/rankings.csv
+touch data/bigcsv/5nodes/rankings.csv
+for file in data/text-deflate/5nodes/rankings/*
+do
+    cat $file | ./zpipe -d >> data/bigcsv/5nodes/rankings.csv
+done
+
+xsv index data/bigcsv/5nodes/rankings.csv
+
+31/12 11:09 ~/dev/pavlo% time xsv search -s 2 '[0-9]{4}' data/bigcsv/5nodes/rankings.csv  | xsv count
+32953
+xsv search -s 2 '[0-9]{4}' data/bigcsv/5nodes/rankings.csv  62.52s user 2.47s system 98% cpu 1:05.96 total
+
+31/12 11:30 ~/dev/pavlo% time ls -1 data/csv/5nodes/rankings/*.csv | parallel -n 1 xsv search -s 2 '\[0-9\]\{4\}' {} | xsv count
+32953
+ls --classify --tabsize=0 --literal --color=auto -1 data/csv/5nodes/rankings/  0.00s user 0.00s system 64% cpu 0.007 total
+parallel -n 1 xsv search -s 2 '\[0-9\]\{4\}' {}  141.86s user 4.14s system 730% cpu 19.993 total
+xsv count  0.02s user 0.00s system 0% cpu 19.993 total
+
+31/12 11:30 ~/dev/pavlo% time ls -1 data/csv/5nodes/rankings/* | parallel -n 1 xsv index
+ls --classify --tabsize=0 --literal --color=auto -1 data/csv/5nodes/rankings/  0.00s user 0.00s system 65% cpu 0.007 total
+parallel -n 1 xsv index  24.49s user 3.31s system 344% cpu 8.061 total
+
+31/12 11:31 ~/dev/pavlo% time ls -1 data/csv/5nodes/rankings/*.csv | parallel -n 1 xsv search -s 2 '\[0-9\]\{4\}' {} | xsv count
+32953
+ls --classify --tabsize=0 --literal --color=auto -1   0.00s user 0.00s system 82% cpu 0.005 total
+parallel -n 1 xsv search -s 2 '\[0-9\]\{4\}' {}  138.12s user 3.44s system 737% cpu 19.191 total
+xsv count  0.02s user 0.00s system 0% cpu 19.191 total
+
+# "sudo purge" has no significant impact on the time
+
+31/12 11:35 ~/dev/pavlo% time ls -1 data/csv/5nodes/rankings/*.csv | parallel -n 1 xsv search -s 2 '\[0-9\]\{2\}' {} | xsv count
+89990580
+ls --classify --tabsize=0 --literal --color=auto -1   0.00s user 0.00s system 47% cpu 0.010 total
+parallel -n 1 xsv search -s 2 '\[0-9\]\{2\}' {}  118.84s user 10.05s system 385% cpu 33.411 total
+xsv count  27.84s user 0.59s system 85% cpu 33.410 total
+
+31/12 11:41 ~/dev/pavlo% foo() { xsv search -s 2 '[0-9]{2}' $1 | xsv count }
+31/12 11:42 ~/dev/pavlo% export PARALLEL_ENV="$(typeset -f foo)";
+
+31/12 11:42 ~/dev/pavlo% time ls -1 data/csv/5nodes/rankings/*.csv | parallel -n 1 foo | numsum
+89990481
+ls --classify --tabsize=0 --literal --color=auto -1   0.00s user 0.00s system 47% cpu 0.010 total
+parallel -n 1 foo  217.32s user 7.12s system 715% cpu 31.377 total
+numsum  0.01s user 0.00s system 0% cpu 31.377 total
