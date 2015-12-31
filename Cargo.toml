@@ -1,6 +1,15 @@
 [package]
-name = "devoxx2016"
+name = "dx16"
 version = "0.1.0"
 authors = ["Mathieu Poumeyrol <kali@zoy.org>"]
 
 [dependencies]
+glob = "*"
+simple_parallel = "0.2"
+num_cpus = "0.2.6"
+flate2 = "0.2.7"
+scan_fmt = "*"
+pad = "*"
+itertools = "*"
+quick-error = "0.2.1"
+rmp = "*"
