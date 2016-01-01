@@ -4,7 +4,8 @@ extern crate glob;
 extern crate simple_parallel;
 extern crate num_cpus;
 extern crate rmp;
-#[macro_use] extern crate quick_error;
+#[macro_use]
+extern crate quick_error;
 
 pub mod mapred;
 
@@ -25,18 +26,21 @@ quick_error! {
 
 pub type Dx16Result<T> = Result<T, Dx16Error>;
 
-pub fn data_dir_for(state:&str, set:&str, table:&str) -> String {
+pub fn data_dir_for(state: &str, set: &str, table: &str) -> String {
     format!("data/{}/{}/{}", state, set, table)
 }
 
-pub struct RankingReader<R:io::Read> {
+pub struct RankingReader<R: io::Read> {
     stream: io::BufReader<R>,
-    buf: [u8;1024]
+    buf: [u8; 1024],
 }
 
 impl <R:io::Read> RankingReader<R> {
-    pub fn new(r:R) -> RankingReader<R> {
-        RankingReader { stream: io::BufReader::new(r), buf: [0u8;1024]}
+    pub fn new(r: R) -> RankingReader<R> {
+        RankingReader {
+            stream: io::BufReader::new(r),
+            buf: [0u8; 1024],
+        }
     }
 }
 
@@ -52,11 +56,11 @@ impl <R:io::Read> Iterator for RankingReader<R> {
         }
         let pagerank = read_u32(&mut self.stream);
         if pagerank.is_err() {
-            return Some(Err(Dx16Error::DecodeString))
+            return Some(Err(Dx16Error::DecodeString));
         }
         let duration = read_u32(&mut self.stream);
         if duration.is_err() {
-            return Some(Err(Dx16Error::DecodeString))
+            return Some(Err(Dx16Error::DecodeString));
         }
         Some(Ok(pagerank.unwrap()))
     }
