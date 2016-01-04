@@ -2,29 +2,40 @@ extern crate dx16;
 extern crate glob;
 extern crate simple_parallel;
 extern crate num_cpus;
+extern crate csv;
 extern crate rmp;
+extern crate rmp_serialize;
+extern crate rustc_serialize;
 extern crate flate2;
 
 use std::fs;
 use std::path;
-use std::io::{BufRead, BufReader, BufWriter};
+use std::io::BufWriter;
+
+use rmp_serialize::Encoder;
 
 use flate2::{Compression, FlateWriteExt};
-use rmp::encode::{write_u32, write_str};
+
+use rustc_serialize::{Encodable, Decodable};
 
 use dx16::Dx16Result;
+use dx16::Ranking;
 
 fn main() {
     let set = "5nodes";
-    pack(set, "rankings").unwrap();
+    let table = ::std::env::args().nth(1).expect("please specify some table");
+    match &*table {
+        "rankings" => pack::<Ranking>(set, "rankings").unwrap(),
+        t => panic!("unknwon table {}", &*t),
+    }
 }
 
-fn pack(set: &str, table: &str) -> Dx16Result<()> {
-    let source_root = dx16::data_dir_for("csv", set, table);
+fn pack<T: Decodable + Encodable>(set: &str, table: &str) -> Dx16Result<()> {
+    let source_root = dx16::data_dir_for("text-deflate", set, table);
     let target_root = dx16::data_dir_for("rmp-gz", set, table);
     let _ = fs::remove_dir_all(target_root.clone());
     try!(fs::create_dir_all(target_root.clone()));
-    let glob = source_root.clone() + "/*.csv";
+    let glob = source_root.clone() + "/*.deflate";
     let jobs: Dx16Result<Vec<(path::PathBuf, path::PathBuf)>> =
         try!(::glob::glob(&glob))
             .map(|entry| {
@@ -38,19 +49,18 @@ fn pack(set: &str, table: &str) -> Dx16Result<()> {
     let jobs = try!(jobs);
     let mut pool = simple_parallel::Pool::new(1 + num_cpus::get());
     let task = |job: (path::PathBuf, path::PathBuf)| -> Dx16Result<()> {
-        let input = try!(fs::File::open(job.0));
-        let reader = BufReader::new(input);
+        let cmd = ::std::process::Command::new("./zpipe.sh")
+                      .arg(job.0)
+                      .stdout(::std::process::Stdio::piped())
+                      .spawn()
+                      .unwrap();
+        let mut reader = csv::Reader::from_reader(cmd.stdout.unwrap()).has_headers(false);
         let mut output = BufWriter::new(try!(fs::File::create(job.1)))
                              .gz_encode(Compression::Default);
-        for line in reader.lines() {
-            let line = try!(line);
-            let mut tokens = line.split(",");
-            let url = tokens.next().unwrap();
-            let pagerank: u32 = try!(tokens.next().unwrap().parse());
-            let duration: u32 = try!(tokens.next().unwrap().parse());
-            try!(write_str(&mut output, url));
-            try!(write_u32(&mut output, pagerank));
-            try!(write_u32(&mut output, duration));
+        let mut coder = Encoder::new(&mut output);
+        for item in reader.decode() {
+            let item: T = item.unwrap();
+            item.encode(&mut coder).unwrap();
         }
         Ok(())
     };

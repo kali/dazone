@@ -13,3 +13,7 @@ pad = "*"
 itertools = "*"
 quick-error = "0.2.1"
 rmp = "*"
+csv = "*"
+rustc-serialize = "*"
+rmp-serialize = "*"
+
