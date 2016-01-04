@@ -70,3 +70,40 @@ impl <R:io::Read> Iterator for RankingReader<R> {
         }
     }
 }
+
+pub struct RankingRankingReader<R: io::Read> {
+    stream: io::BufReader<R>,
+    buf: [u8; 1024],
+}
+
+impl <R:io::Read> RankingRankingReader<R> {
+    pub fn new(r: R) -> RankingRankingReader<R> {
+        RankingRankingReader {
+            stream: io::BufReader::new(r),
+            buf: [0u8; 1024],
+        }
+    }
+}
+
+impl <R:io::Read> Iterator for RankingRankingReader<R> {
+    type Item = Dx16Result<u32>;
+
+    fn next(&mut self) -> Option<Dx16Result<u32>> {
+        use rmp::decode::*;
+        let _marker = match read_marker(&mut self.stream) {
+            Err(rmp::decode::MarkerReadError::UnexpectedEOF) => return None,
+            Err(error) => panic!(error),
+            Ok(mark) => mark,
+        };
+        let _s = read_str(&mut self.stream, &mut self.buf);
+        let pagerank = read_u32_loosely(&mut self.stream);
+        if pagerank.is_err() {
+            return Some(Err(Dx16Error::DecodeString));
+        }
+        let duration = read_u32_loosely(&mut self.stream);
+        if duration.is_err() {
+            return Some(Err(Dx16Error::DecodeString));
+        }
+        Some(Ok(pagerank.unwrap() as u32))
+    }
+}
