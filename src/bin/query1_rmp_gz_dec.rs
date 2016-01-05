@@ -12,7 +12,7 @@ fn main() {
 }
 
 fn scan(set: &str, table: &str) -> Dx16Result<()> {
-    let data = dx16::bibi_rmp_gz_dec(set, table);
+    let data = dx16::rmp_read::bibi_rmp_gz_dec(set, table);
     let result = mapred::FilterCountOp::filter_count(|r: Dx16Result<Ranking>| {
                                                          r.unwrap().pagerank > 10
                                                      },
