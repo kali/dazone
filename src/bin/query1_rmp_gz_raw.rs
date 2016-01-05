@@ -21,9 +21,10 @@ fn scan(set: &str, table: &str) -> Dx16Result<()> {
                           .stdout(::std::process::Stdio::piped())
                           .spawn()
                           .unwrap();
-            Box::new(dx16::RankingRankingReader::new(cmd.stdout.unwrap()))
+            Box::new(dx16::RankingRMPReader::new(cmd.stdout.unwrap()))
         }));
-    let result = mapred::MapReduceOp::map_reduce(|r: Dx16Result<u32>| r.unwrap() > 10, pageranks);
+    let result = mapred::FilterCountOp::filter_count(|r: Dx16Result<u32>| r.unwrap() > 10,
+                                                     pageranks);
     println!("{:?}", result);
     Ok(())
 }
