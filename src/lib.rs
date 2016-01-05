@@ -9,11 +9,14 @@ extern crate rmp_serialize;
 extern crate quick_error;
 extern crate rustc_serialize;
 
+pub mod data;
 pub mod mapred;
 
-use rustc_serialize::{Encodable, Decodable};
+use rustc_serialize::Decodable;
 use rmp_serialize::decode::Decoder;
 use std::io;
+
+use data::Ranking;
 
 quick_error! {
 #[derive(Debug)]
@@ -33,13 +36,6 @@ pub type Dx16Result<T> = Result<T, Dx16Error>;
 
 pub fn data_dir_for(state: &str, set: &str, table: &str) -> String {
     format!("data/{}/{}/{}", state, set, table)
-}
-
-#[derive(RustcDecodable,RustcEncodable,Debug)]
-pub struct Ranking {
-    pub url: String,
-    pub pagerank: u64,
-    pub duration: u64,
 }
 
 pub struct RankingReader<R: io::Read> {

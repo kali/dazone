@@ -5,7 +5,7 @@ use dx16::Dx16Result;
 use dx16::mapred;
 use dx16::mapred::BI;
 
-use dx16::Ranking;
+use dx16::data::Ranking;
 
 fn main() {
     let set = "5nodes";

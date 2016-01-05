@@ -11,6 +11,7 @@ extern crate flate2;
 use std::fs;
 use std::path;
 use std::io::BufWriter;
+use std::io::Read;
 
 use rmp_serialize::Encoder;
 
@@ -19,13 +20,14 @@ use flate2::{Compression, FlateWriteExt};
 use rustc_serialize::{Encodable, Decodable};
 
 use dx16::Dx16Result;
-use dx16::Ranking;
+use dx16::data;
 
 fn main() {
     let set = "5nodes";
     let table = ::std::env::args().nth(1).expect("please specify some table");
     match &*table {
-        "rankings" => pack::<Ranking>(set, "rankings").unwrap(),
+        "rankings" => pack::<data::Ranking>(set, "rankings").unwrap(),
+        "uservisits" => pack::<data::UserVisits>(set, "uservisits").unwrap(),
         t => panic!("unknwon table {}", &*t),
     }
 }
@@ -47,21 +49,25 @@ fn pack<T: Decodable + Encodable>(set: &str, table: &str) -> Dx16Result<()> {
             })
             .collect();
     let jobs = try!(jobs);
-    let mut pool = simple_parallel::Pool::new(1 + num_cpus::get());
+    let mut pool = simple_parallel::Pool::new(2 * num_cpus::get());
     let task = |job: (path::PathBuf, path::PathBuf)| -> Dx16Result<()> {
-        let cmd = ::std::process::Command::new("./zpipe.sh")
-                      .arg(job.0)
-                      .stdout(::std::process::Stdio::piped())
-                      .spawn()
-                      .unwrap();
-        let mut reader = csv::Reader::from_reader(cmd.stdout.unwrap()).has_headers(false);
-        let mut output = BufWriter::new(try!(fs::File::create(job.1)))
-                             .gz_encode(Compression::Default);
-        let mut coder = Encoder::new(&mut output);
-        for item in reader.decode() {
-            let item: T = item.unwrap();
-            item.encode(&mut coder).unwrap();
+        let mut cmd: ::std::process::Child = ::std::process::Command::new("./zpipe.sh")
+                                                 .arg(job.0.clone())
+                                                 .stdout(::std::process::Stdio::piped())
+                                                 .spawn()
+                                                 .unwrap();
+        {
+            let mut output = cmd.stdout.as_mut().unwrap();
+            let mut reader = csv::Reader::from_reader(output.by_ref()).has_headers(false);
+            let mut output = BufWriter::new(try!(fs::File::create(job.1)))
+                                 .gz_encode(Compression::Default);
+            let mut coder = Encoder::new(&mut output);
+            for item in reader.decode() {
+                let item: T = item.unwrap();
+                item.encode(&mut coder).unwrap();
+            }
         }
+        cmd.wait().unwrap();
         Ok(())
     };
     let result: Dx16Result<Vec<()>> = unsafe { pool.map(jobs, &task).collect() };

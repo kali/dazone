@@ -1,2 +1,2 @@
 #!/bin/sh
-./zpipe -d < $1
+exec ./zpipe -d < $1
