@@ -9,9 +9,14 @@ extern crate rmp_serialize;
 extern crate quick_error;
 extern crate rustc_serialize;
 extern crate pbr;
+extern crate capnp;
 
 pub mod data;
 pub mod mapred;
+
+pub mod cap {
+    include!(concat!(env!("OUT_DIR"), "/dx16_capnp.rs"));
+}
 
 use std::marker::PhantomData;
 
@@ -21,6 +26,12 @@ use std::{io, path, process};
 use std::io::{Read, BufReader};
 
 use mapred::BI;
+
+use data::UserVisits;
+
+use capnp::serialize_packed;
+use capnp::serialize::OwnedSegments;
+use capnp::message::Reader;
 
 quick_error! {
 #[derive(Debug)]
@@ -32,6 +43,7 @@ quick_error! {
         ValueWrite(err: rmp::encode::ValueWriteError) { from() }
         ValueRead(err: rmp::decode::ValueReadError) { from() }
         RmpDecode(err: rmp_serialize::decode::Error) { from() }
+        Capnp(err: capnp::Error) { from() }
         DecodeString { }
     }
 }
@@ -106,6 +118,61 @@ pub fn bibi_rmp_gz_dec<'a, 'b, T>(set: &str, table: &str) -> BI<'a, BI<'b, Dx16R
                                         .collect();
     Box::new(files.into_iter()
                   .map(|f| -> BI<Dx16Result<T>> { Box::new(RMPReader::new(&f)) }))
+}
+
+pub fn bibi_cap_gz_dec<'a, 'b>(set: &str,
+                               table: &str)
+                               -> BI<'a, BI<'b, Dx16Result<Reader<OwnedSegments>>>> {
+    let source_root = data_dir_for("cap-gz", set, table);
+    let glob = source_root.clone() + "/*.cap-gz";
+    let files: Vec<path::PathBuf> = ::glob::glob(&glob)
+                                        .unwrap()
+                                        .map(|p| p.unwrap().to_owned())
+                                        .collect();
+    Box::new(files.into_iter()
+                  .map(|f| -> BI<Dx16Result<Reader<OwnedSegments>>> {
+                      Box::new(CapGzReader::new(&f))
+                  }))
+}
+
+pub struct CapGzReader {
+    options: capnp::message::ReaderOptions,
+    stream: io::BufReader<PipeReader>,
+}
+
+impl CapGzReader {
+    pub fn new(file: &path::Path) -> CapGzReader {
+        let child = process::Command::new("gzcat")
+                        .arg("-d")
+                        .arg(file)
+                        .stdout(process::Stdio::piped())
+                        .spawn()
+                        .unwrap();
+        CapGzReader {
+            options: capnp::message::ReaderOptions::new(),
+            stream: BufReader::new(PipeReader { child: child }),
+        }
+    }
+}
+
+impl Iterator for CapGzReader {
+    type Item = Dx16Result<Reader<OwnedSegments>>;
+
+    fn next(&mut self) -> Option<Dx16Result<Reader<OwnedSegments>>> {
+        match serialize_packed::read_message(&mut self.stream, self.options) {
+            Ok(msg) => {
+                Some(Ok(msg))
+            }
+            Err(err) => {
+                use std::error::Error;
+                if err.description().contains("Premature EOF") {
+                    return None;
+                } else {
+                    return Some(Err(Dx16Error::from(err)));
+                }
+            }
+        }
+    }
 }
 
 pub struct RankingRMPReader<R: io::Read> {

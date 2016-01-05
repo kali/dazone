@@ -2,6 +2,7 @@
 name = "dx16"
 version = "0.1.0"
 authors = ["Mathieu Poumeyrol <kali@zoy.org>"]
+build = "build.rs"
 
 [dependencies]
 glob = "*"
@@ -17,4 +18,7 @@ csv = "*"
 rustc-serialize = "*"
 rmp-serialize = "*"
 pbr = "*"
+capnp = "*"
 
+[build-dependencies]
+capnpc = "*"

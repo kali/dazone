@@ -7,11 +7,14 @@ extern crate rmp;
 extern crate rmp_serialize;
 extern crate rustc_serialize;
 extern crate flate2;
+extern crate pbr;
 
 use std::fs;
 use std::path;
 use std::io::BufWriter;
 use std::io::Read;
+
+use std::sync::Mutex;
 
 use rmp_serialize::Encoder;
 
@@ -21,20 +24,28 @@ use rustc_serialize::{Encodable, Decodable};
 
 use dx16::Dx16Result;
 use dx16::data;
+use dx16::data::Capitanable;
+
+use pbr::ProgressBar;
 
 fn main() {
     let set = "5nodes";
     let table = ::std::env::args().nth(1).expect("please specify some table");
+    let dst = ::std::env::args().nth(2).expect("please specify some dst format");
     match &*table {
-        "rankings" => pack::<data::Ranking>(set, "rankings").unwrap(),
-        "uservisits" => pack::<data::UserVisits>(set, "uservisits").unwrap(),
+        "rankings" => loop_files::<data::Ranking>(set, "rankings", &*dst).unwrap(),
+        "uservisits" => loop_files::<data::UserVisits>(set, "uservisits", &*dst).unwrap(),
         t => panic!("unknwon table {}", &*t),
     }
 }
 
-fn pack<T: Decodable + Encodable>(set: &str, table: &str) -> Dx16Result<()> {
+fn loop_files<T: Decodable + Encodable + Capitanable>(set: &str,
+                                                      table: &str,
+                                                      dst: &str)
+                                                      -> Dx16Result<()> {
     let source_root = dx16::data_dir_for("text-deflate", set, table);
-    let target_root = dx16::data_dir_for("rmp-gz", set, table);
+
+    let target_root = dx16::data_dir_for(dst, set, table);
     let _ = fs::remove_dir_all(target_root.clone());
     try!(fs::create_dir_all(target_root.clone()));
     let glob = source_root.clone() + "/*.deflate";
@@ -44,11 +55,13 @@ fn pack<T: Decodable + Encodable>(set: &str, table: &str) -> Dx16Result<()> {
                 let entry: String = try!(entry).to_str().unwrap().to_string();
                 let target = target_root.clone() +
                              &entry[source_root.len()..entry.find(".").unwrap()] +
-                             ".rmp.gz";
+                             "." + dst;
                 Ok((path::PathBuf::from(&*entry), path::PathBuf::from(&target)))
             })
             .collect();
     let jobs = try!(jobs);
+
+    let pb = Mutex::new(ProgressBar::new(jobs.len()));
     let mut pool = simple_parallel::Pool::new(2 * num_cpus::get());
     let task = |job: (path::PathBuf, path::PathBuf)| -> Dx16Result<()> {
         let mut cmd: ::std::process::Child = ::std::process::Command::new("./zpipe.sh")
@@ -59,15 +72,27 @@ fn pack<T: Decodable + Encodable>(set: &str, table: &str) -> Dx16Result<()> {
         {
             let mut output = cmd.stdout.as_mut().unwrap();
             let mut reader = csv::Reader::from_reader(output.by_ref()).has_headers(false);
-            let mut output = BufWriter::new(try!(fs::File::create(job.1)))
+            let mut writer = BufWriter::new(try!(fs::File::create(job.1)))
                                  .gz_encode(Compression::Default);
-            let mut coder = Encoder::new(&mut output);
-            for item in reader.decode() {
-                let item: T = item.unwrap();
-                item.encode(&mut coder).unwrap();
+            match dst {
+                "rmp-gz" => {
+                    let mut coder = Encoder::new(&mut writer);
+                    for item in reader.decode() {
+                        let item: T = item.unwrap();
+                        item.encode(&mut coder).unwrap();
+                    }
+                }
+                "cap-gz" => {
+                    for item in reader.decode() {
+                        let item: T = item.unwrap();
+                        item.write_to_cap(&mut writer).unwrap();
+                    }
+                }
+                any => panic!("unknown format {}", any),
             }
         }
         cmd.wait().unwrap();
+        pb.lock().unwrap().inc();
         Ok(())
     };
     let result: Dx16Result<Vec<()>> = unsafe { pool.map(jobs, &task).collect() };
