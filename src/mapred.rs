@@ -9,8 +9,14 @@ use pbr::ProgressBar;
 
 pub type BI<'a,A> = Box<Iterator<Item=A> + Send + 'a>;
 
+pub enum Emit<K, V> {
+    None,
+    One(K, V),
+    Vec(Vec<(K, V)>),
+}
+
 pub struct MapReduceOp<'a, M, R, A, K, V>
-    where M: Sync + Fn(A) -> BI<'a, (K, V)>,
+    where M: Sync + Fn(A) -> Emit<K, V>,
           R: Sync + Fn(&V, &V) -> V,
           A: Send,
           K: Send + Eq + ::std::hash::Hash + Clone,
@@ -23,7 +29,7 @@ pub struct MapReduceOp<'a, M, R, A, K, V>
 }
 
 impl <'a,M,R,A,K,V> MapReduceOp<'a,M,R,A,K,V>
-    where   M:Sync + Fn(A) -> BI<'a,(K,V)>,
+    where   M:Sync + Fn(A) -> Emit<K,V>,
             R:Sync + Fn(&V,&V) -> V,
             A:Send,
             K:Send + Eq + ::std::hash::Hash + Clone,
@@ -35,15 +41,26 @@ impl <'a,M,R,A,K,V> MapReduceOp<'a,M,R,A,K,V>
         let pb = Mutex::new(ProgressBar::new(chunks.size_hint().0));
         let each = |it: BI<A>| -> HashMap<K, V> {
             let mut aggregates: HashMap<K, V> = HashMap::new();
-            for (k, v) in it.flat_map(|e| mapper(e)) {
-                let val = aggregates.entry(k.clone());
-                match val {
-                    Entry::Occupied(prev) => {
-                        let next = reducer(prev.get(), &v);
-                        *(prev.into_mut()) = next;
+            {
+                let mut use_pair = |k: K, v: V| {
+                    let val = aggregates.entry(k.clone());
+                    match val {
+                        Entry::Occupied(prev) => {
+                            let next = reducer(prev.get(), &v);
+                            *(prev.into_mut()) = next;
+                        }
+                        Entry::Vacant(vac) => {
+                            vac.insert(v);
+                        }
                     }
-                    Entry::Vacant(vac) => {
-                        vac.insert(v);
+                };
+                for em in it.map(|e| mapper(e)) {
+                    match em {
+                        Emit::None => (),
+                        Emit::One(k, v) => use_pair(k, v),
+                        Emit::Vec(v) => for p in v.into_iter() {
+                            use_pair(p.0, p.1)
+                        },
                     }
                 }
             }
