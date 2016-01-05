@@ -3,6 +3,10 @@ use std::collections::hash_map::Entry;
 
 use simple_parallel::pool::Pool;
 
+use std::sync::Mutex;
+
+use pbr::ProgressBar;
+
 pub type BI<'a,A> = Box<Iterator<Item=A> + Send + 'a>;
 
 pub struct MapReduceOp<'a, M, R, A, K, V>
@@ -28,6 +32,7 @@ impl <'a,M,R,A,K,V> MapReduceOp<'a,M,R,A,K,V>
     pub fn run(&self, chunks: BI<BI<A>>) -> HashMap<K, V> {
         let reducer = &self.reducer;
         let mapper = &self.mapper;
+        let pb = Mutex::new(ProgressBar::new(chunks.size_hint().0));
         let each = |it: BI<A>| -> HashMap<K, V> {
             let mut aggregates: HashMap<K, V> = HashMap::new();
             for (k, v) in it.flat_map(|e| mapper(e)) {
@@ -42,6 +47,7 @@ impl <'a,M,R,A,K,V> MapReduceOp<'a,M,R,A,K,V>
                     }
                 }
             }
+            pb.lock().unwrap().inc();
             aggregates
         };
         let mut pool = Pool::new(1 + ::num_cpus::get());

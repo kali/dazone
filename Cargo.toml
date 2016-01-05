@@ -16,4 +16,5 @@ rmp = "*"
 csv = "*"
 rustc-serialize = "*"
 rmp-serialize = "*"
+pbr = "*"
 

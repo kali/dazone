@@ -8,6 +8,7 @@ extern crate rmp_serialize;
 #[macro_use]
 extern crate quick_error;
 extern crate rustc_serialize;
+extern crate pbr;
 
 pub mod data;
 pub mod mapred;
@@ -16,7 +17,7 @@ use std::marker::PhantomData;
 
 use rustc_serialize::Decodable;
 use rmp_serialize::decode::Decoder;
-use std::{io, fs, path, process};
+use std::{io, path, process};
 use std::io::{Read, BufReader};
 
 use mapred::BI;
@@ -99,9 +100,12 @@ pub fn bibi_rmp_gz_dec<'a, 'b, T>(set: &str, table: &str) -> BI<'a, BI<'b, Dx16R
 {
     let source_root = data_dir_for("rmp-gz", set, table);
     let glob = source_root.clone() + "/*.rmp.gz";
-    Box::new(::glob::glob(&glob)
-                 .unwrap()
-                 .map(|f| -> BI<Dx16Result<T>> { Box::new(RMPReader::new(&f.unwrap())) }))
+    let files: Vec<path::PathBuf> = ::glob::glob(&glob)
+                                        .unwrap()
+                                        .map(|p| p.unwrap().to_owned())
+                                        .collect();
+    Box::new(files.into_iter()
+                  .map(|f| -> BI<Dx16Result<T>> { Box::new(RMPReader::new(&f)) }))
 }
 
 pub struct RankingRMPReader<R: io::Read> {
