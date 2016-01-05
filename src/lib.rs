@@ -16,7 +16,8 @@ use std::marker::PhantomData;
 
 use rustc_serialize::Decodable;
 use rmp_serialize::decode::Decoder;
-use std::io;
+use std::{io, fs, path, process};
+use std::io::{Read, BufReader};
 
 use mapred::BI;
 
@@ -40,23 +41,43 @@ pub fn data_dir_for(state: &str, set: &str, table: &str) -> String {
     format!("data/{}/{}/{}", state, set, table)
 }
 
-pub struct RMPReader<R: io::Read, T: Decodable> {
-    stream: Decoder<io::BufReader<R>>,
+pub struct PipeReader {
+    child: process::Child,
+}
+
+impl Read for PipeReader {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let res = self.child.stdout.as_mut().unwrap().read(buf);
+        if let Ok(0) = res {
+            try!(self.child.wait());
+        }
+        res
+    }
+}
+
+pub struct RMPReader<T: Decodable> {
+    stream: Decoder<BufReader<PipeReader>>,
     phantom: PhantomData<T>,
 }
 
-impl <R:io::Read, T:Decodable> RMPReader<R, T> {
-    pub fn new(r: R) -> RMPReader<R, T> {
+impl < T:Decodable> RMPReader< T> {
+    pub fn new(file: &path::Path) -> RMPReader<T> {
+        let child = process::Command::new("gzcat")
+                        .arg("-d")
+                        .arg(file)
+                        .stdout(process::Stdio::piped())
+                        .spawn()
+                        .unwrap();
         RMPReader {
-            stream: Decoder::new(io::BufReader::new(r)),
+            stream: Decoder::new(BufReader::new(PipeReader { child: child })),
             phantom: PhantomData,
         }
     }
 }
 
-unsafe impl<R:io::Read, T:Decodable> Send for RMPReader<R,T> {}
+unsafe impl< T:Decodable> Send for RMPReader< T> {}
 
-impl <R:io::Read, T:Decodable> Iterator for RMPReader<R,T> {
+impl < T:Decodable> Iterator for RMPReader< T> {
     type Item = Dx16Result<T>;
 
     fn next(&mut self) -> Option<Dx16Result<T>> {
@@ -69,6 +90,30 @@ impl <R:io::Read, T:Decodable> Iterator for RMPReader<R,T> {
             Ok(r) => {
                 Some(Ok(r))
             }
+        }
+    }
+}
+
+pub fn bibi_rmp_gz_dec<'a, 'b, T>(set: &str, table: &str) -> BI<'a, BI<'b, Dx16Result<T>>>
+    where T: Decodable + 'static
+{
+    let source_root = data_dir_for("rmp-gz", set, table);
+    let glob = source_root.clone() + "/*.rmp.gz";
+    Box::new(::glob::glob(&glob)
+                 .unwrap()
+                 .map(|f| -> BI<Dx16Result<T>> { Box::new(RMPReader::new(&f.unwrap())) }))
+}
+
+pub struct RankingRMPReader<R: io::Read> {
+    stream: io::BufReader<R>,
+    buf: [u8; 1024],
+}
+
+impl <R:io::Read> RankingRMPReader<R> {
+    pub fn new(r: R) -> RankingRMPReader<R> {
+        RankingRMPReader {
+            stream: io::BufReader::new(r),
+            buf: [0u8; 1024],
         }
     }
 }
@@ -93,35 +138,5 @@ impl <R:io::Read> Iterator for RankingRMPReader<R> {
             return Some(Err(Dx16Error::DecodeString));
         }
         Some(Ok(pagerank.unwrap() as u32))
-    }
-}
-
-pub fn bibi_rmp_gz_dec<'a, 'b, T>(set: &str, table: &str) -> BI<'a, BI<'b, Dx16Result<T>>>
-    where T: Decodable + 'static
-{
-    let source_root = data_dir_for("rmp-gz", set, table);
-    let glob = source_root.clone() + "/*.rmp.gz";
-    Box::new(::glob::glob(&glob).unwrap().map(|f| -> BI<Dx16Result<T>> {
-        let cmd = ::std::process::Command::new("gzcat")
-                      .arg("-d")
-                      .arg(f.unwrap())
-                      .stdout(::std::process::Stdio::piped())
-                      .spawn()
-                      .unwrap();
-        Box::new(RMPReader::new(cmd.stdout.unwrap()))
-    }))
-}
-
-pub struct RankingRMPReader<R: io::Read> {
-    stream: io::BufReader<R>,
-    buf: [u8; 1024],
-}
-
-impl <R:io::Read> RankingRMPReader<R> {
-    pub fn new(r: R) -> RankingRMPReader<R> {
-        RankingRMPReader {
-            stream: io::BufReader::new(r),
-            buf: [0u8; 1024],
-        }
     }
 }
