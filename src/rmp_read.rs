@@ -54,7 +54,7 @@ pub fn bibi_rmp_gz_dec<'a, 'b, T>(set: &str, table: &str) -> BI<'a, BI<'b, Dx16R
     where T: Decodable + 'static
 {
     let source_root = ::data_dir_for("rmp-gz", set, table);
-    let glob = source_root.clone() + "/*.rmp.gz";
+    let glob = source_root.clone() + "/*.rmp-gz";
     let files: Vec<path::PathBuf> = ::glob::glob(&glob)
                                         .unwrap()
                                         .map(|p| p.unwrap().to_owned())

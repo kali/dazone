@@ -3,8 +3,10 @@ https://amplab.cs.berkeley.edu/benchmark/
 wget http://www.zlib.net/zpipe.c
 cc -lz zpipe.c -o zpipe
 
-mkdir -p data/text-deflate/5nodes/rankings
-s3cmd get --recursive s3://big-data-benchmark/pavlo/text-deflate/5nodes/rankings/ data/text-deflate/5nodes/rankings
+SET=5nodes
+TABLE=rankings
+mkdir -p data/text-deflate/$SET/$TABLE
+s3cmd get --recursive s3://big-data-benchmark/pavlo/text-deflate/$SET/$TABLE/ data/text-deflate/$SET/$TABLE
 
 rm -rf data/csv/5nodes/rankings
 mkdir -p data/csv/5nodes/rankings

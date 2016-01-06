@@ -8,6 +8,7 @@ extern crate rmp_serialize;
 extern crate rustc_serialize;
 extern crate flate2;
 extern crate pbr;
+extern crate clap;
 
 use std::fs;
 use std::path;
@@ -28,10 +29,28 @@ use dx16::data::Capitanable;
 
 use pbr::ProgressBar;
 
+use clap::{Arg, App};
+
 fn main() {
-    let set = "5nodes";
-    let table = ::std::env::args().nth(1).expect("please specify some table");
-    let dst = ::std::env::args().nth(2).expect("please specify some dst format");
+    let matches = App::new("pack")
+                      .about("repack data to better formats")
+                      .arg(Arg::with_name("SET")
+                               .short("s")
+                               .long("set")
+                               .help("pick a set (tiny, 1node, 5nodes)")
+                               .takes_value(true))
+                      .arg(Arg::with_name("TABLE")
+                               .index(1)
+                               .required(true)
+                               .help("table to process"))
+                      .arg(Arg::with_name("FORMAT")
+                               .index(2)
+                               .required(true)
+                               .help("cap-gz or rmp-gz"))
+                      .get_matches();
+    let set = matches.value_of("SET").unwrap_or("5nodes");
+    let table = matches.value_of("TABLE").unwrap();
+    let dst = matches.value_of("FORMAT").unwrap();
     match &*table {
         "rankings" => loop_files::<data::Ranking>(set, "rankings", &*dst).unwrap(),
         "uservisits" => loop_files::<data::UserVisits>(set, "uservisits", &*dst).unwrap(),

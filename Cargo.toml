@@ -19,6 +19,7 @@ rustc-serialize = "*"
 rmp-serialize = "*"
 pbr = "*"
 capnp = "*"
+clap = "*"
 
 [build-dependencies]
 capnpc = "*"
