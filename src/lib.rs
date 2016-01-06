@@ -10,6 +10,7 @@ extern crate quick_error;
 extern crate rustc_serialize;
 extern crate pbr;
 extern crate capnp;
+extern crate rayon;
 
 pub mod data;
 pub mod mapred;

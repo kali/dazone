@@ -20,6 +20,7 @@ rmp-serialize = "*"
 pbr = "*"
 capnp = "*"
 clap = "*"
+rayon = "*"
 
 [build-dependencies]
 capnpc = "*"

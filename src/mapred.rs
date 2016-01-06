@@ -9,6 +9,82 @@ use pbr::ProgressBar;
 
 pub type BI<'a,A> = Box<Iterator<Item=A> + Send + 'a>;
 
+//
+// trait Accumulator<R,K,V>
+// where R: Sync + Fn(&V, &V) -> V,
+// K: Send+ 'static,
+// V: Send + 'static {
+// type Shard:PartialAccumulator<R,K,V>;
+//
+// fn make_shard<'a>(&mut self) -> &'a mut Self::Shard;
+// fn finalize(&mut self);
+// }
+//
+// trait PartialAccumulator<R,K,V>
+// where R: Sync + Fn(&V, &V) -> V,
+// K: Send +'static,
+// V: Send+ 'static {
+// fn offer(&mut self, k: K, v: V);
+// }
+//
+// struct VecHashMapAccu<'a, R, K, V>
+// where R: Sync + Fn(&V, &V) -> V,
+// K: Send + 'static,
+// V: Send + 'static
+// {
+// shards: Vec<HashMap<K, V>>,
+// reducer: R,
+// phantom: ::std::marker::PhantomData<&'a usize>,
+// }
+//
+// struct HashMapAccu<'a, R, K, V>
+// where R: Sync + Fn(&V, &V) -> V,
+// K: Send + 'static,
+// V: Send + 'static
+// {
+// hash: &'a HashMap<K, V>,
+// reducer: R,
+// }
+//
+// impl<'a, R,K,V> Accumulator< R,K,V> for VecHashMapAccu<'a, R,K,V>
+// where R: Sync + Fn(&V, &V) -> V,
+// K: Send + Eq + ::std::hash::Hash + 'static,
+// V: Send + 'static {
+// type Shard = HashMapAccu<'a, R,K,V>;
+//
+// fn make_shard(&mut self) -> &'a mut Self::Shard {
+// let shard = HashMapAccu {
+// hash: HashMap::new(),
+// reducer: self.reducer,
+// };
+// self.shards.push(shard);
+// &mut shard
+// }
+// fn finalize(&mut self) {
+// }
+// }
+//
+// impl<'a, R,K,V> PartialAccumulator<R,K,V> for HashMapAccu<'a, R,K,V>
+// where R: Sync + Fn(&V, &V) -> V,
+// K: Send + Eq + ::std::hash::Hash + 'static,
+// V: Send + 'static {
+// fn offer(&mut self, k: K, v: V) {
+// let reducer = &self.reducer;
+// let val = self.hash.entry(k);
+// match val {
+// Entry::Occupied(prev) => {
+// let next = reducer(prev.get(), &v);
+// (prev.into_mut()) = next;
+// }
+// Entry::Vacant(vac) => {
+// vac.insert(v);
+// }
+// }
+// }
+//
+// }
+//
+
 pub enum Emit<K, V> {
     None,
     One(K, V),
@@ -35,31 +111,36 @@ impl <'a,M,R,A,K,V> MapReduceOp<'a,M,R,A,K,V>
             K:Send + Eq + ::std::hash::Hash,
             V:Send
 {
+    fn update_hashmap(hash: &mut HashMap<K, V>, reducer: &R, k: K, v: V) {
+        let val = hash.entry(k);
+        match val {
+            Entry::Occupied(prev) => {
+                let next = reducer(prev.get(), &v);
+                *(prev.into_mut()) = next;
+            }
+            Entry::Vacant(vac) => {
+                vac.insert(v);
+            }
+        }
+    }
+
+
     pub fn run(&self, chunks: BI<BI<A>>) -> HashMap<K, V> {
         let reducer = &self.reducer;
         let mapper = &self.mapper;
-        let pb = Mutex::new(ProgressBar::new(chunks.size_hint().0));
+        println!("Mapping...");
+        let mut rawpb = ProgressBar::new(chunks.size_hint().0);
+        rawpb.format(" _🐌·🍀");
+        let pb = Mutex::new(rawpb);
         let each = |it: BI<A>| -> HashMap<K, V> {
             let mut aggregates: HashMap<K, V> = HashMap::new();
             {
-                let mut use_pair = |k: K, v: V| {
-                    let val = aggregates.entry(k);
-                    match val {
-                        Entry::Occupied(prev) => {
-                            let next = reducer(prev.get(), &v);
-                            *(prev.into_mut()) = next;
-                        }
-                        Entry::Vacant(vac) => {
-                            vac.insert(v);
-                        }
-                    }
-                };
                 for em in it.map(|e| mapper(e)) {
                     match em {
                         Emit::None => (),
-                        Emit::One(k, v) => use_pair(k, v),
+                        Emit::One(k, v) => Self::update_hashmap(&mut aggregates, reducer, k, v),
                         Emit::Vec(mut v) => for p in v.drain(..) {
-                            use_pair(p.0, p.1)
+                            Self::update_hashmap(&mut aggregates, reducer, p.0, p.1)
                         },
                     }
                 }
@@ -69,20 +150,15 @@ impl <'a,M,R,A,K,V> MapReduceOp<'a,M,R,A,K,V>
         };
         let mut pool = Pool::new(1 + ::num_cpus::get());
         let mut halfway: Vec<HashMap<K, V>> = unsafe { pool.map(chunks, &each).collect() };
+        println!("\nReducing...");
+        let mut rawpb = ProgressBar::new(halfway.len());
+        rawpb.format(" _🐌·🍀");
         let mut result: HashMap<K, V> = HashMap::new();
         for mut h in halfway.drain(..) {
             for (k, v) in h.drain() {
-                let val = result.entry(k);
-                match val {
-                    Entry::Occupied(prev) => {
-                        let next = reducer(prev.get(), &v);
-                        *(prev.into_mut()) = next;
-                    }
-                    Entry::Vacant(vac) => {
-                        vac.insert(v);
-                    }
-                }
+                Self::update_hashmap(&mut result, reducer, k, v);
             }
+            rawpb.inc();
         }
         result
     }

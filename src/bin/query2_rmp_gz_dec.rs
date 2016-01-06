@@ -17,7 +17,7 @@ fn scan(set: &str) -> Dx16Result<()> {
                                 Emit::One(reader.source_ip.chars().take(8).collect::<String>(),
                                           reader.ad_revenue)
                             },
-                            |a, b| *a + *b,
+                            |a, b| a + b,
                             bibi);
     println!("{} groups", result.len());
 
