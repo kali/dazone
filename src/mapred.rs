@@ -19,8 +19,8 @@ pub struct MapReduceOp<'a, M, R, A, K, V>
     where M: Sync + Fn(A) -> Emit<K, V>,
           R: Sync + Fn(&V, &V) -> V,
           A: Send,
-          K: Send + Eq + ::std::hash::Hash + Clone,
-          V: Clone + Send
+          K: Send + Eq + ::std::hash::Hash,
+          V: Send
 {
     mapper: M,
     reducer: R,
@@ -32,8 +32,8 @@ impl <'a,M,R,A,K,V> MapReduceOp<'a,M,R,A,K,V>
     where   M:Sync + Fn(A) -> Emit<K,V>,
             R:Sync + Fn(&V,&V) -> V,
             A:Send,
-            K:Send + Eq + ::std::hash::Hash + Clone,
-            V:Clone+Send
+            K:Send + Eq + ::std::hash::Hash,
+            V:Send
 {
     pub fn run(&self, chunks: BI<BI<A>>) -> HashMap<K, V> {
         let reducer = &self.reducer;
@@ -43,7 +43,7 @@ impl <'a,M,R,A,K,V> MapReduceOp<'a,M,R,A,K,V>
             let mut aggregates: HashMap<K, V> = HashMap::new();
             {
                 let mut use_pair = |k: K, v: V| {
-                    let val = aggregates.entry(k.clone());
+                    let val = aggregates.entry(k);
                     match val {
                         Entry::Occupied(prev) => {
                             let next = reducer(prev.get(), &v);
@@ -58,7 +58,7 @@ impl <'a,M,R,A,K,V> MapReduceOp<'a,M,R,A,K,V>
                     match em {
                         Emit::None => (),
                         Emit::One(k, v) => use_pair(k, v),
-                        Emit::Vec(v) => for p in v.into_iter() {
+                        Emit::Vec(mut v) => for p in v.drain(..) {
                             use_pair(p.0, p.1)
                         },
                     }
@@ -68,18 +68,18 @@ impl <'a,M,R,A,K,V> MapReduceOp<'a,M,R,A,K,V>
             aggregates
         };
         let mut pool = Pool::new(1 + ::num_cpus::get());
-        let halfway: Vec<HashMap<K, V>> = unsafe { pool.map(chunks, &each).collect() };
+        let mut halfway: Vec<HashMap<K, V>> = unsafe { pool.map(chunks, &each).collect() };
         let mut result: HashMap<K, V> = HashMap::new();
-        for h in halfway.iter() {
-            for (k, v) in h.iter() {
-                let val = result.entry(k.clone());
+        for mut h in halfway.drain(..) {
+            for (k, v) in h.drain() {
+                let val = result.entry(k);
                 match val {
                     Entry::Occupied(prev) => {
-                        let next = reducer(prev.get(), v);
-                        *(prev.into_mut()) = next.clone();
+                        let next = reducer(prev.get(), &v);
+                        *(prev.into_mut()) = next;
                     }
                     Entry::Vacant(vac) => {
-                        vac.insert(v.clone());
+                        vac.insert(v);
                     }
                 }
             }
@@ -96,11 +96,18 @@ impl <'a,M,R,A,K,V> MapReduceOp<'a,M,R,A,K,V>
         }
     }
 
-    pub fn map_reduce(map: M, reduce: R, chunks: BI<BI<A>>) -> HashMap<K, V> {
-        MapReduceOp::new_map_reduce(map, reduce).run(chunks)
-    }
-
 }
+
+pub fn map_reduce<'a, M, R, A, K, V>(map: M, reduce: R, chunks: BI<BI<A>>) -> HashMap<K, V>
+    where M: Sync + Fn(A) -> Emit<K, V>,
+          R: Sync + Fn(&V, &V) -> V,
+          A: Send,
+          K: Send + Eq + ::std::hash::Hash,
+          V: Send
+{
+    MapReduceOp::new_map_reduce(map, reduce).run(chunks)
+}
+
 
 pub struct FilterCountOp<'a, M, A>
     where M: Sync + Fn(A) -> bool,
