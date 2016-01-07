@@ -40,7 +40,7 @@ fn scan(set: &str, length: usize) -> Dx16Result<()> {
                                 for (i, v) in visit.get_source_i_p()
                                                    .unwrap()
                                                    .bytes()
-                                                   .take(::std::cmp::max(chars.len(), length))
+                                                   .take(::std::cmp::min(chars.len(), length))
                                                    .enumerate() {
                                     chars[i] = v;
                                 }
