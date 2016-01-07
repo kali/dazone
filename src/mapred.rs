@@ -22,7 +22,7 @@ pub trait Aggregator<R,K,V>
         K: Send + Eq + ::std::hash::Hash + 'static,
         V: Send + 'static
 {
-    fn create_inlet<'b>(&'b self) -> Box<Inlet<R, K, V> + 'b>;
+    fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b>;
     fn converge(&mut self) {}
 }
 
@@ -62,10 +62,11 @@ impl<'a, R, K, V> Aggregator<R, K, V> for HashMapAggregator<'a, R, K, V>
           K: Send + Eq + ::std::hash::Hash + 'static,
           V: Send + 'static
 {
-    fn create_inlet<'b>(&'b self) -> Box<Inlet<R, K, V> + 'b> {
+    fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b> {
         Box::new(HashMapInlet {
             parent: &self,
             partial: HashMap::new(),
+            i: i,
         })
     }
 }
@@ -78,6 +79,7 @@ struct HashMapInlet<'a, 'b, R, K, V>
 {
     parent: &'b HashMapAggregator<'a, R, K, V>,
     partial: HashMap<K, V>,
+    i: usize,
 }
 
 impl<'a, 'b, R, K, V> Inlet<R, K, V> for HashMapInlet<'a, 'b, R, K, V>
@@ -106,6 +108,14 @@ impl<'a, 'b, R, K, V> Drop for HashMapInlet<'a, 'b, R, K, V>
 
 // ************************** MultiHashMap Aggregator *************************
 
+trait MultiAggregator<'a, R,K,V>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + ::std::hash::Hash + 'static,
+          V: Send + 'static {
+    fn partition(&self, k: &K) -> usize;
+    fn merge<'b>(&self, inlet: &mut MultiHashMapInlet<'a, 'b, R, K, V>);
+}
+
 struct MultiHashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + ::std::hash::Hash + 'static,
@@ -115,11 +125,30 @@ struct MultiHashMapAggregator<'a, R, K, V>
     reducer: &'a R,
 }
 
-impl<'a, R, K, V> MultiHashMapAggregator<'a, R, K, V>
+impl<'a, R, K, V> MultiAggregator<'a, R, K, V> for MultiHashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + ::std::hash::Hash + 'static,
           V: Send + 'static
 {
+    fn merge<'b>(&self, inlet: &mut MultiHashMapInlet<'a, 'b, R, K, V>) {
+        for (i, mut partial) in inlet.hashmaps.drain(..).enumerate() {
+            let len = partial.len();
+            let t1 = ::time::get_time();
+            let mut locked = self.hashmaps[i].lock().unwrap();
+            let t2 = ::time::get_time();
+            for (k, v) in partial.drain() {
+                update_hashmap(&mut locked, self.reducer, k, v);
+            }
+            let t3 = ::time::get_time();
+            if t2 - t1 > ::time::Duration::milliseconds(100) {
+                println!("{:4} wait {}ms ({})", i, (t2 - t1).num_milliseconds(), len);
+            }
+            if t3 - t2 > ::time::Duration::milliseconds(100) {
+                println!("{:4} took {}ms ({})", i, (t3 - t2).num_milliseconds(), len);
+            }
+        }
+    }
+
     fn partition(&self, k: &K) -> usize {
         use std::hash::{Hasher, SipHasher};
         let mut s = SipHasher::new();
@@ -128,23 +157,27 @@ impl<'a, R, K, V> MultiHashMapAggregator<'a, R, K, V>
     }
 }
 
-
 impl<'a, R, K, V> Aggregator<R, K, V> for MultiHashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + ::std::hash::Hash + 'static,
           V: Send + 'static
 {
-    fn create_inlet<'b>(&'b self) -> Box<Inlet<R, K, V> + 'b> {
+    fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b> {
         let mut v = Vec::with_capacity(self.hashmaps.len());
         for _ in 0..self.hashmaps.len() {
             v.push(HashMap::new())
         }
         Box::new(MultiHashMapInlet {
-            parent: &self,
+            parent: self,
             hashmaps: v,
+            reducer: self.reducer,
+            i: i,
         })
     }
 }
+
+
+// ************************** MultiHashMap Inlet *************************
 
 struct MultiHashMapInlet<'a, 'b, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
@@ -152,8 +185,10 @@ struct MultiHashMapInlet<'a, 'b, R, K, V>
           V: Send + 'static,
           'a: 'b
 {
-    parent: &'b MultiHashMapAggregator<'a, R, K, V>,
+    parent: &'b MultiAggregator<'a, R, K, V>,
     hashmaps: Vec<HashMap<K, V>>,
+    reducer: &'a R,
+    i: usize,
 }
 
 impl<'a, 'b, R, K, V> Inlet<R, K, V> for MultiHashMapInlet<'a, 'b, R, K, V>
@@ -164,7 +199,7 @@ impl<'a, 'b, R, K, V> Inlet<R, K, V> for MultiHashMapInlet<'a, 'b, R, K, V>
 {
     fn push_one(&mut self, k: K, v: V) {
         let partial: usize = self.parent.partition(&k);
-        update_hashmap(&mut self.hashmaps[partial], self.parent.reducer, k, v)
+        update_hashmap(&mut self.hashmaps[partial], self.reducer, k, v)
     }
 }
 
@@ -175,12 +210,7 @@ impl<'a, 'b, R, V, K> Drop for MultiHashMapInlet<'a, 'b, R, K, V>
           'a: 'b
 {
     fn drop(&mut self) {
-        for (total, mut partial) in self.parent.hashmaps.iter().zip(self.hashmaps.drain(..)) {
-            let mut locked = total.lock().unwrap();
-            for (k, v) in partial.drain() {
-                update_hashmap(&mut locked, self.parent.reducer, k, v);
-            }
-        }
+        self.parent.merge(self)
     }
 }
 
@@ -199,6 +229,20 @@ fn update_hashmap<'h, 'r, R, K, V>(hash: &'h mut HashMap<K, V>, reducer: &'r R, 
             vac.insert(v);
         }
     }
+}
+
+#[allow(dead_code)]
+fn dump_vec_map<K, V>(i: usize, hashes: &Vec<HashMap<K, V>>)
+    where K: Send + Eq + ::std::hash::Hash + 'static,
+          V: Send + 'static
+{
+    let lens: Vec<usize> = hashes.iter().map(|h| h.len()).collect();
+    let sum: usize = lens.iter().sum();
+    println!("{:4} min:{:5} max:{:5} avg:{:5}",
+             i,
+             lens.iter().min().unwrap(),
+             lens.iter().max().unwrap(),
+             sum / lens.len());
 }
 
 pub struct MapOp<'a, M, A, K, V>
@@ -229,9 +273,9 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
         let pb = Mutex::new(rawpb);
 
         {
-            let each = |it: BI<A>| {
+            let each = |(i, it): (usize, BI<A>)| {
                 {
-                    let mut inlet = aggregator.create_inlet();
+                    let mut inlet = aggregator.create_inlet(i);
                     for e in it.map(|e| mapper(e)) {
                         inlet.push(e)
                     }
@@ -240,7 +284,7 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
             };
             let mut pool = Pool::new(1 + ::num_cpus::get());
             unsafe {
-                pool.map(chunks, &each).count();
+                pool.map(chunks.enumerate(), &each).count();
             }
 
         }

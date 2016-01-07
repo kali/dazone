@@ -21,6 +21,8 @@ pbr = "*"
 capnp = "*"
 clap = "*"
 rayon = "*"
+time = "0.1"
+radix_trie = "0.0.8"
 
 [build-dependencies]
 capnpc = "*"
