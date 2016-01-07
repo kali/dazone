@@ -9,80 +9,28 @@ use pbr::ProgressBar;
 
 pub type BI<'a, A> = Box<Iterator<Item = A> + Send + 'a>;
 
-// trait Accumulator<R,K,V>
-// where R: Sync + Fn(&V, &V) -> V,
-// K: Send+ 'static,
-// V: Send + 'static {
-// type Shard:PartialAccumulator<R,K,V>;
-//
-// fn make_shard<'a>(&mut self) -> &'a mut Self::Shard;
-// fn finalize(&mut self);
-// }
-//
-// trait PartialAccumulator<R,K,V>
-// where R: Sync + Fn(&V, &V) -> V,
-// K: Send +'static,
-// V: Send+ 'static {
-// fn offer(&mut self, k: K, v: V);
-// }
+pub enum Emit<K, V> {
+    None,
+    One(K, V),
+    Vec(Vec<(K, V)>),
+}
 
-// struct VecHashMapAccu<R, K, V>
-// where R: Sync + Fn(&V, &V) -> V,
-// K: Send,
-// V: Send
-// {
-// reducer: R,
-// phantom: ::std::marker::PhantomData<(K, V)>,
-// }
-//
-// struct VecHashMapAccuInlet<'a, R, K, V>
-// where R: Sync + Fn(&V, &V) -> V,
-// K: Send,
-// V: Send
-// {
-// hash: HashMap<K, V>,
-// reducer: R,
-// accu: Arc<Mutex<&'a VecHashMapAccu<R, K, V>>>,
-// }
-//
-// impl<R,K,V> VecHashMapAccu<R,K,V>
-// where R: Sync + Fn(&V, &V) -> V,
-// K: Send + Eq + ::std::hash::Hash ,
-// V: Send{
-// type Inlet = VecHashMapAccuInlet<'a, R,K,V>;
-//
-// fn make_inlet(&mut self) -> VecHashMapAccuInlet<R, K, V> {
-// let shard = VecHashMapAccu {
-// hash: HashMap::new(),
-// reducer: self.reducer,
-// };
-// self.shards.push(shard);
-// &mut shard
-// }
-// fn finalize(&mut self) {
-// }
-// }
-//
-// impl<'a, R,K,V> VecHashMapAccuInlet<'a, R,K,V>
-// where R: Sync + Fn(&V, &V) -> V,
-// K: Send + Eq + ::std::hash::Hash,
-// V: Send {
-// fn offer(&mut self, k: K, v: V) {
-// let reducer = &self.reducer;
-// let val = self.hash.entry(k);
-// match val {
-// Entry::Occupied(prev) => {
-// let next = reducer(prev.get(), &v);
-// (prev.into_mut()) = next;
-// }
-// Entry::Vacant(vac) => {
-// vac.insert(v);
-// }
-// }
-// }
-//
-// }
-//
+trait Aggregator<R,K,V>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+        K: Send + Eq + ::std::hash::Hash + 'static,
+        V: Send + 'static
+{
+    fn create_inlet<'b>(&'b self) -> Box<Inlet<R, K, V> + 'b>;
+}
+
+
+trait Inlet<R, K, V>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + ::std::hash::Hash + 'static,
+          V: Send + 'static
+{
+    fn push(&mut self, e: Emit<K, V>);
+}
 
 struct HashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
@@ -93,18 +41,16 @@ struct HashMapAggregator<'a, R, K, V>
     reducer: &'a R,
 }
 
-impl<'a, R, K, V> HashMapAggregator<'a, R, K, V>
+impl<'a, R, K, V> Aggregator<R, K, V> for HashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + ::std::hash::Hash + 'static,
           V: Send + 'static
 {
-    pub fn create_inlet<'b>(&'b self) -> HashMapInlet<'a, 'b, R, K, V>
-        where 'a: 'b
-    {
-        HashMapInlet {
+    fn create_inlet<'b>(&'b self) -> Box<Inlet<R, K, V> + 'b> {
+        Box::new(HashMapInlet {
             parent: &self,
             partial: HashMap::new(),
-        }
+        })
     }
 }
 
@@ -118,7 +64,7 @@ struct HashMapInlet<'a, 'b, R, K, V>
     partial: HashMap<K, V>,
 }
 
-impl<'a, 'b, R, K, V> HashMapInlet<'a, 'b, R, K, V>
+impl<'a, 'b, R, K, V> Inlet<R, K, V> for HashMapInlet<'a, 'b, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + ::std::hash::Hash + 'static,
           V: Send + 'static,
@@ -148,12 +94,6 @@ impl<'a, 'b, R, K, V> Drop for HashMapInlet<'a, 'b, R, K, V>
             update_hashmap(&mut locked, self.parent.reducer, k, v);
         }
     }
-}
-
-pub enum Emit<K, V> {
-    None,
-    One(K, V),
-    Vec(Vec<(K, V)>),
 }
 
 fn update_hashmap<'h, 'r, R, K, V>(hash: &'h mut HashMap<K, V>, reducer: &'r R, k: K, v: V)
@@ -221,6 +161,7 @@ impl<'a, M, R, A, K, V> MapReduceOp<'a, M, R, A, K, V>
             unsafe {
                 pool.map(chunks, &each).count();
             }
+
         }
         result
     }

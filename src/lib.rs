@@ -105,9 +105,7 @@ impl Iterator for CapGzReader {
 
     fn next(&mut self) -> Option<Dx16Result<Reader<OwnedSegments>>> {
         match serialize_packed::read_message(&mut self.stream, self.options) {
-            Ok(msg) => {
-                Some(Ok(msg))
-            }
+            Ok(msg) => Some(Ok(msg)),
             Err(err) => {
                 use std::error::Error;
                 if err.description().contains("Premature EOF") {

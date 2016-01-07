@@ -16,7 +16,7 @@ pub struct RMPReader<T: Decodable> {
     phantom: PhantomData<T>,
 }
 
-impl < T:Decodable> RMPReader< T> {
+impl<T: Decodable> RMPReader<T> {
     pub fn new(file: &path::Path) -> RMPReader<T> {
         let child = process::Command::new("gzcat")
                         .arg("-d")
@@ -31,9 +31,9 @@ impl < T:Decodable> RMPReader< T> {
     }
 }
 
-unsafe impl< T:Decodable> Send for RMPReader< T> {}
+unsafe impl<T: Decodable> Send for RMPReader<T> {}
 
-impl < T:Decodable> Iterator for RMPReader< T> {
+impl<T: Decodable> Iterator for RMPReader<T> {
     type Item = Dx16Result<T>;
 
     fn next(&mut self) -> Option<Dx16Result<T>> {
@@ -43,9 +43,7 @@ impl < T:Decodable> Iterator for RMPReader< T> {
         match res {
             Err(InvalidMarkerRead(ReadError::UnexpectedEOF)) => None,
             Err(a) => Some(Err(Dx16Error::from(a))),
-            Ok(r) => {
-                Some(Ok(r))
-            }
+            Ok(r) => Some(Ok(r)),
         }
     }
 }
@@ -68,7 +66,7 @@ pub struct RankingRMPReader<R: io::Read> {
     buf: [u8; 1024],
 }
 
-impl <R:io::Read> RankingRMPReader<R> {
+impl<R: io::Read> RankingRMPReader<R> {
     pub fn new(r: R) -> RankingRMPReader<R> {
         RankingRMPReader {
             stream: io::BufReader::new(r),
@@ -77,7 +75,7 @@ impl <R:io::Read> RankingRMPReader<R> {
     }
 }
 
-impl <R:io::Read> Iterator for RankingRMPReader<R> {
+impl<R: io::Read> Iterator for RankingRMPReader<R> {
     type Item = Dx16Result<u32>;
 
     fn next(&mut self) -> Option<Dx16Result<u32>> {
