@@ -1,11 +1,15 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
+use std::hash::Hash;
+
 use simple_parallel::pool::Pool;
 
 use std::sync::Mutex;
 
 use pbr::ProgressBar;
+
+use radix_trie::{Trie, TrieKey};
 
 pub type BI<'a, A> = Box<Iterator<Item = A> + Send + 'a>;
 
@@ -19,7 +23,7 @@ pub enum Emit<K, V> {
 
 pub trait Aggregator<R,K,V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-        K: Send + Eq + ::std::hash::Hash + 'static,
+        K: Send + Eq + Hash + 'static,
         V: Send + 'static
 {
     fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b>;
@@ -28,7 +32,7 @@ pub trait Aggregator<R,K,V>
 
 pub trait Inlet<R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
     fn push_one(&mut self, k: K, v: V);
@@ -50,7 +54,7 @@ pub trait Inlet<R, K, V>
 
 struct HashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
     hashmap: Mutex<&'a mut HashMap<K, V>>,
@@ -59,7 +63,7 @@ struct HashMapAggregator<'a, R, K, V>
 
 impl<'a, R, K, V> Aggregator<R, K, V> for HashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
     fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b> {
@@ -73,7 +77,7 @@ impl<'a, R, K, V> Aggregator<R, K, V> for HashMapAggregator<'a, R, K, V>
 
 struct HashMapInlet<'a, 'b, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static,
           'a: 'b
 {
@@ -85,7 +89,7 @@ struct HashMapInlet<'a, 'b, R, K, V>
 
 impl<'a, 'b, R, K, V> Inlet<R, K, V> for HashMapInlet<'a, 'b, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static,
           'a: 'b
 {
@@ -96,7 +100,7 @@ impl<'a, 'b, R, K, V> Inlet<R, K, V> for HashMapInlet<'a, 'b, R, K, V>
 
 impl<'a, 'b, R, K, V> Drop for HashMapInlet<'a, 'b, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
     fn drop(&mut self) {
@@ -107,46 +111,63 @@ impl<'a, 'b, R, K, V> Drop for HashMapInlet<'a, 'b, R, K, V>
     }
 }
 
-// ************************** MultiHashMap Aggregator *************************
+// ************************** MultiAggregator *************************
 
 trait MultiAggregator<'a, R,K,V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static {
+
     fn partition(&self, k: &K) -> usize;
-    fn merge<'b>(&self, inlet: &mut MultiHashMapInlet<'a, 'b, R, K, V>);
+
+    fn merge<'b>(&self, inlet: &mut MultiHashMapInlet<'a, 'b, R, K, V>) {
+        for (i, mut partial) in inlet.hashmaps.drain(..).enumerate() {
+            self.update_partition(i, partial.drain())
+        }
+    }
+
+    fn update_partition(&self, partition: usize, kvs: ::std::collections::hash_map::Drain<K, V>);
 }
 
-struct MultiHashMapAggregator<'a, R, K, V>
+// ************************** MultiHashMap Aggregator *************************
+
+pub struct MultiHashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
-    hashmaps: Vec<Mutex<&'a mut HashMap<K, V>>>,
+    hashmaps: Vec<Mutex<HashMap<K, V>>>,
     reducer: &'a R,
+}
+
+impl<'a, R, K, V> MultiHashMapAggregator<'a, R, K, V>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Hash + 'static,
+          V: Send + 'static
+{
+    pub fn new(reducer: &'a R, partitions: usize) -> MultiHashMapAggregator<'a, R, K, V> {
+        {
+            MultiHashMapAggregator {
+                hashmaps: (0..partitions).map(|_| Mutex::new(HashMap::new())).collect(),
+                reducer: reducer,
+            }
+        }
+    }
+
+    pub fn as_inner(self) -> Vec<HashMap<K, V>> {
+        self.hashmaps.into_iter().map(|m| m.into_inner().unwrap()).collect()
+    }
 }
 
 impl<'a, R, K, V> MultiAggregator<'a, R, K, V> for MultiHashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
-    fn merge<'b>(&self, inlet: &mut MultiHashMapInlet<'a, 'b, R, K, V>) {
-        for (i, mut partial) in inlet.hashmaps.drain(..).enumerate() {
-            let len = partial.len();
-            let t1 = ::time::get_time();
-            let mut locked = self.hashmaps[i].lock().unwrap();
-            let t2 = ::time::get_time();
-            for (k, v) in partial.drain() {
-                update_hashmap(&mut locked, self.reducer, k, v);
-            }
-            let t3 = ::time::get_time();
-            if t2 - t1 > ::time::Duration::milliseconds(100) {
-                println!("{:4} wait {}ms ({})", i, (t2 - t1).num_milliseconds(), len);
-            }
-            if t3 - t2 > ::time::Duration::milliseconds(100) {
-                println!("{:4} took {}ms ({})", i, (t3 - t2).num_milliseconds(), len);
-            }
+    fn update_partition(&self, partition: usize, kvs: ::std::collections::hash_map::Drain<K, V>) {
+        let mut locked = self.hashmaps[partition].lock().unwrap();
+        for (k, v) in kvs {
+            update_hashmap(&mut locked, self.reducer, k, v);
         }
     }
 
@@ -160,29 +181,86 @@ impl<'a, R, K, V> MultiAggregator<'a, R, K, V> for MultiHashMapAggregator<'a, R,
 
 impl<'a, R, K, V> Aggregator<R, K, V> for MultiHashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
     fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b> {
-        let mut v = Vec::with_capacity(self.hashmaps.len());
-        for _ in 0..self.hashmaps.len() {
-            v.push(HashMap::new())
-        }
-        Box::new(MultiHashMapInlet {
-            parent: self,
-            hashmaps: v,
-            reducer: self.reducer,
-            i: i,
-        })
+        MultiHashMapInlet::new(self, self.hashmaps.len(), self.reducer, i)
     }
 }
 
 
+
+// ************************** MultiTrie Aggregator *************************
+
+pub struct MultiTrieAggregator<'a, R, K, V>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Hash + 'static + TrieKey,
+          V: Send + 'static
+{
+    tries: Vec<Mutex<Trie<K, V>>>,
+    reducer: &'a R,
+}
+
+impl<'a, R, K, V> MultiTrieAggregator<'a, R, K, V>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Hash + 'static + TrieKey,
+          V: Send + 'static
+{
+    pub fn new(reducer: &'a R, partitions: usize) -> MultiTrieAggregator<'a, R, K, V> {
+        {
+            MultiTrieAggregator {
+                tries: (0..partitions).map(|_| Mutex::new(Trie::new())).collect(),
+                reducer: reducer,
+            }
+        }
+    }
+
+    pub fn as_inner(self) -> Vec<Trie<K, V>> {
+        self.tries.into_iter().map(|m| m.into_inner().unwrap()).collect()
+    }
+}
+
+impl<'a, R, K, V> MultiAggregator<'a, R, K, V> for MultiTrieAggregator<'a, R, K, V>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Hash + 'static + TrieKey,
+          V: Send + 'static
+{
+    fn update_partition(&self, partition: usize, kvs: ::std::collections::hash_map::Drain<K, V>) {
+        let mut locked = self.tries[partition].lock().unwrap();
+        for (k, v) in kvs {
+            let found = locked.get_mut(&k).is_some();
+            let after = if found {
+                (self.reducer)(&locked.remove(&k).unwrap(), &v)
+            } else {
+                v
+            };
+            locked.insert(k, after);
+        }
+    }
+
+    fn partition(&self, k: &K) -> usize {
+        let coding = k.encode();
+        (coding[0] as usize * 53 + coding[1] as usize) % self.tries.len()
+    }
+}
+
+impl<'a, R, K, V> Aggregator<R, K, V> for MultiTrieAggregator<'a, R, K, V>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Hash + 'static + TrieKey,
+          V: Send + 'static
+{
+    fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b> {
+        MultiHashMapInlet::new(self, self.tries.len(), self.reducer, i)
+    }
+}
+
 // ************************** MultiHashMap Inlet *************************
+
 
 struct MultiHashMapInlet<'a, 'b, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static,
           'a: 'b
 {
@@ -193,9 +271,31 @@ struct MultiHashMapInlet<'a, 'b, R, K, V>
     i: usize,
 }
 
+impl<'a, 'b, R, K, V> MultiHashMapInlet<'a, 'b, R, K, V>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Hash + 'static,
+          V: Send + 'static,
+          'a: 'b
+{
+    fn new(parent: &'b MultiAggregator<'a, R, K, V>,
+           size: usize,
+           reducer: &'a R,
+           i: usize)
+           -> Box<Inlet<R, K, V> + 'b> {
+        Box::new(MultiHashMapInlet {
+            parent: parent,
+            hashmaps: (0..size)
+                          .map(|_| HashMap::new())
+                          .collect(),
+            reducer: reducer,
+            i: i,
+        })
+    }
+}
+
 impl<'a, 'b, R, K, V> Inlet<R, K, V> for MultiHashMapInlet<'a, 'b, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static,
           'a: 'b
 {
@@ -207,7 +307,7 @@ impl<'a, 'b, R, K, V> Inlet<R, K, V> for MultiHashMapInlet<'a, 'b, R, K, V>
 
 impl<'a, 'b, R, V, K> Drop for MultiHashMapInlet<'a, 'b, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static,
           'a: 'b
 {
@@ -218,7 +318,7 @@ impl<'a, 'b, R, V, K> Drop for MultiHashMapInlet<'a, 'b, R, K, V>
 
 fn update_hashmap<'h, 'r, R, K, V>(hash: &'h mut HashMap<K, V>, reducer: &'r R, k: K, v: V)
     where R: Sync + Fn(&V, &V) -> V + 'static,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
     let val = hash.entry(k);
@@ -235,7 +335,7 @@ fn update_hashmap<'h, 'r, R, K, V>(hash: &'h mut HashMap<K, V>, reducer: &'r R, 
 
 #[allow(dead_code)]
 fn dump_vec_map<K, V>(i: usize, hashes: &Vec<HashMap<K, V>>)
-    where K: Send + Eq + ::std::hash::Hash + 'static,
+    where K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
     let lens: Vec<usize> = hashes.iter().map(|h| h.len()).collect();
@@ -250,7 +350,7 @@ fn dump_vec_map<K, V>(i: usize, hashes: &Vec<HashMap<K, V>>)
 pub struct MapOp<'a, M, A, K, V>
     where M: Sync + Fn(A) -> Emit<K, V>,
           A: Send,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
     mapper: M,
@@ -261,7 +361,7 @@ pub struct MapOp<'a, M, A, K, V>
 impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
     where M: Sync + Fn(A) -> Emit<K, V>,
           A: Send,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
     pub fn run<Agg, R>(&self, chunks: BI<BI<A>>, aggregator: &Agg)
@@ -305,7 +405,7 @@ pub fn map_reduce<'a, M, R, A, K, V>(map: M, reduce: R, chunks: BI<BI<A>>) -> Ha
     where M: Sync + Fn(A) -> Emit<K, V>,
           R: Sync + Fn(&V, &V) -> V + 'static,
           A: Send,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
     let mut result: HashMap<K, V> = HashMap::new();
@@ -328,19 +428,13 @@ pub fn map_par_reduce<'a, M, R, A, K, V>(map: M,
     where M: Sync + Fn(A) -> Emit<K, V>,
           R: Sync + Fn(&V, &V) -> V + 'static,
           A: Send,
-          K: Send + Eq + ::std::hash::Hash + 'static,
+          K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
-    let mut result: Vec<HashMap<K, V>> = (0..partitions).map(|_| HashMap::new()).collect();
-    {
-        let mut aggregator = MultiHashMapAggregator {
-            hashmaps: result.iter_mut().map(|h| Mutex::new(h)).collect(),
-            reducer: &reduce,
-        };
-        MapOp::new_map_reduce(map).run(chunks, &aggregator);
-        aggregator.converge()
-    }
-    result
+    let mut aggregator = MultiHashMapAggregator::new(&reduce, partitions);
+    MapOp::new_map_reduce(map).run(chunks, &aggregator);
+    aggregator.converge();
+    aggregator.as_inner()
 }
 
 
