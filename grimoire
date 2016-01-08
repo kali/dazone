@@ -1,7 +1,7 @@
 https://amplab.cs.berkeley.edu/benchmark/
 
 wget http://www.zlib.net/zpipe.c
-cc -lz zpipe.c -o zpipe
+cc zpipe.c -o zpipe -lz
 
 SET=5nodes
 TABLE=rankings
