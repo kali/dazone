@@ -109,16 +109,10 @@ pub fn map_reduce<'a, M, R, A, K, V>(map: M, reduce: R, chunks: BI<BI<A>>) -> Ha
           K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
-    let mut result: HashMap<K, V> = HashMap::new();
-    {
-        let mut aggregator = ::aggregators::HashMapAggregator {
-            hashmap: Mutex::new(&mut result),
-            reducer: &reduce,
-        };
-        MapOp::new_map_reduce(map).run(chunks, &aggregator);
-        aggregator.converge()
-    }
-    result
+    let mut aggregator = ::aggregators::HashMapAggregator::new(&reduce);
+    MapOp::new_map_reduce(map).run(chunks, &aggregator);
+    aggregator.converge();
+    aggregator.as_inner()
 }
 
 pub fn map_par_reduce<'a, M, R, A, K, V>(map: M,

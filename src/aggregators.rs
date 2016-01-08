@@ -13,8 +13,27 @@ pub struct HashMapAggregator<'a, R, K, V>
           K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
-    pub hashmap: Mutex<&'a mut HashMap<K, V>>,
+    pub hashmap: Mutex<HashMap<K, V>>,
     pub reducer: &'a R,
+}
+
+impl<'a, R, K, V> HashMapAggregator<'a, R, K, V>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Hash + 'static,
+          V: Send + 'static
+{
+    pub fn new(reducer: &'a R) -> HashMapAggregator<'a, R, K, V> {
+        {
+            HashMapAggregator {
+                hashmap: Mutex::new(HashMap::new()),
+                reducer: reducer,
+            }
+        }
+    }
+
+    pub fn as_inner(self) -> HashMap<K, V> {
+        self.hashmap.into_inner().unwrap()
+    }
 }
 
 impl<'a, R, K, V> Aggregator<R, K, V> for HashMapAggregator<'a, R, K, V>
