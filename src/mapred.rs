@@ -19,13 +19,14 @@ pub enum Emit<K, V> {
 
 // ************************** AGGREGATOR / INLET *****************************
 
-pub trait Aggregator<R,K,V>
+pub trait Aggregator<'a, R,K,V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
         K: Send + Eq + Hash + 'static,
         V: Send + 'static
 {
     fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b>;
     fn converge(&mut self) {}
+    fn len(&self) -> u64;
 }
 
 pub trait Inlet<R, K, V>
@@ -66,7 +67,7 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
           V: Send + 'static
 {
     pub fn run<Agg, R>(&self, chunks: BI<BI<A>>, aggregator: &Agg)
-        where Agg: Aggregator<R, K, V> + Sync,
+        where Agg: Aggregator<'a, R, K, V> + Sync,
               R: Sync + Fn(&V, &V) -> V + 'static
     {
         let mapper = &self.mapper;

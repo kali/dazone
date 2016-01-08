@@ -36,7 +36,7 @@ impl<'a, R, K, V> HashMapAggregator<'a, R, K, V>
     }
 }
 
-impl<'a, R, K, V> Aggregator<R, K, V> for HashMapAggregator<'a, R, K, V>
+impl<'a, R, K, V> Aggregator<'a, R, K, V> for HashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static
@@ -47,6 +47,10 @@ impl<'a, R, K, V> Aggregator<R, K, V> for HashMapAggregator<'a, R, K, V>
             partial: HashMap::new(),
             i: i,
         })
+    }
+
+    fn len(&self) -> u64 {
+        self.hashmap.lock().unwrap().len() as u64
     }
 }
 
@@ -154,13 +158,16 @@ impl<'a, R, K, V> MultiAggregator<'a, R, K, V> for MultiHashMapAggregator<'a, R,
     }
 }
 
-impl<'a, R, K, V> Aggregator<R, K, V> for MultiHashMapAggregator<'a, R, K, V>
+impl<'a, R, K, V> Aggregator<'a, R, K, V> for MultiHashMapAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
     fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b> {
         MultiHashMapInlet::new(self, self.hashmaps.len(), self.reducer, i)
+    }
+    fn len(&self) -> u64 {
+        self.hashmaps.iter().map(|h| h.lock().unwrap().len() as u64).sum()
     }
 }
 
@@ -220,13 +227,16 @@ impl<'a, R, K, V> MultiAggregator<'a, R, K, V> for MultiTrieAggregator<'a, R, K,
     }
 }
 
-impl<'a, R, K, V> Aggregator<R, K, V> for MultiTrieAggregator<'a, R, K, V>
+impl<'a, R, K, V> Aggregator<'a, R, K, V> for MultiTrieAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static + TrieKey,
           V: Send + 'static
 {
     fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b> {
         MultiHashMapInlet::new(self, self.tries.len(), self.reducer, i)
+    }
+    fn len(&self) -> u64 {
+        self.tries.iter().map(|h| h.lock().unwrap().len() as u64).sum()
     }
 }
 
