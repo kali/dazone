@@ -23,6 +23,7 @@ clap = "*"
 rayon = "*"
 time = "0.1"
 radix_trie = "0.0.8"
+libc = "*"
 
 [build-dependencies]
 capnpc = "*"

@@ -19,7 +19,7 @@ pub enum Emit<K, V> {
 
 // ************************** AGGREGATOR / INLET *****************************
 
-pub trait Aggregator<'a, R,K,V>
+pub trait Aggregator<'a, R,K,V> : Sync
     where R: Sync + Fn(&V, &V) -> V + 'static,
         K: Send + Eq + Hash + 'static,
         V: Send + 'static
@@ -66,12 +66,14 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
           K: Send + Eq + Hash + 'static,
           V: Send + 'static
 {
-    pub fn run<Agg, R>(&self, chunks: BI<BI<A>>, aggregator: &Agg)
-        where Agg: Aggregator<'a, R, K, V> + Sync,
+    pub fn run<Agg, R>(&self, chunks: BI<BI<A>>, aggregator: &Agg, quiet: bool)
+        where Agg: Aggregator<'a, R, K, V>,
               R: Sync + Fn(&V, &V) -> V + 'static
     {
         let mapper = &self.mapper;
-        println!("Mapping...");
+        if !quiet {
+            println!("Mapping...");
+        }
         let mut rawpb = ProgressBar::new(chunks.size_hint().0);
         rawpb.format(" _🐌·🍀");
         let pb = Mutex::new(rawpb);
@@ -84,7 +86,9 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
                         inlet.push(e)
                     }
                 }
-                pb.lock().unwrap().inc();
+                if !quiet {
+                    pb.lock().unwrap().inc();
+                }
             };
             let mut pool = Pool::new(1 + ::num_cpus::get());
             unsafe {
@@ -111,7 +115,7 @@ pub fn map_reduce<'a, M, R, A, K, V>(map: M, reduce: R, chunks: BI<BI<A>>) -> Ha
           V: Send + 'static
 {
     let mut aggregator = ::aggregators::HashMapAggregator::new(&reduce);
-    MapOp::new_map_reduce(map).run(chunks, &aggregator);
+    MapOp::new_map_reduce(map).run(chunks, &aggregator, false);
     aggregator.converge();
     aggregator.as_inner()
 }
@@ -128,7 +132,7 @@ pub fn map_par_reduce<'a, M, R, A, K, V>(map: M,
           V: Send + 'static
 {
     let mut aggregator = ::aggregators::MultiHashMapAggregator::new(&reduce, partitions);
-    MapOp::new_map_reduce(map).run(chunks, &aggregator);
+    MapOp::new_map_reduce(map).run(chunks, &aggregator, false);
     aggregator.converge();
     aggregator.as_inner()
 }
