@@ -79,6 +79,7 @@ struct HashMapInlet<'a, 'b, R, K, V>
 {
     parent: &'b HashMapAggregator<'a, R, K, V>,
     partial: HashMap<K, V>,
+    #[allow(dead_code)]
     i: usize,
 }
 
@@ -188,6 +189,7 @@ struct MultiHashMapInlet<'a, 'b, R, K, V>
     parent: &'b MultiAggregator<'a, R, K, V>,
     hashmaps: Vec<HashMap<K, V>>,
     reducer: &'a R,
+    #[allow(dead_code)]
     i: usize,
 }
 
