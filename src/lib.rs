@@ -16,6 +16,7 @@ extern crate radix_trie;
 
 pub mod data;
 pub mod mapred;
+pub mod aggregators;
 pub mod rmp_read;
 
 pub mod cap {
