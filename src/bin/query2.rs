@@ -105,8 +105,8 @@ fn main() {
     let t2 = ::time::get_time();
 
     let usage = ::dx16::rusage::get();
-    println!("set:{} chunks:{} length:{} strat:{} buckets:{} workers:{} groups:{} rss_mb:{} \
-              utime_s:{} stime_s:{} ctime_s:{}",
+    println!("set: {:6} chunks: {:4} length: {:2} strat: {:6} buckets: {:4} workers: {:4} \
+              groups: {:9} rss_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:5}",
              set,
              chunks,
              length,

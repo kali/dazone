@@ -127,7 +127,9 @@ impl<'a, R, K, V> MultiHashMapAggregator<'a, R, K, V>
     pub fn new(reducer: &'a R, partitions: usize) -> MultiHashMapAggregator<'a, R, K, V> {
         {
             MultiHashMapAggregator {
-                hashmaps: (0..partitions).map(|_| Mutex::new(HashMap::new())).collect(),
+                hashmaps: (0..partitions)
+                              .map(|_| Mutex::new(HashMap::new()))
+                              .collect(),
                 reducer: reducer,
             }
         }
