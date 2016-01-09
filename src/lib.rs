@@ -13,11 +13,13 @@ extern crate capnp;
 // extern crate rayon;
 extern crate time;
 extern crate radix_trie;
+extern crate libc;
 
 pub mod data;
 pub mod mapred;
 pub mod aggregators;
 pub mod rmp_read;
+pub mod rusage;
 
 pub mod cap {
     include!(concat!(env!("OUT_DIR"), "/dx16_capnp.rs"));
