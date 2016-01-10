@@ -1,6 +1,116 @@
+use libc::{rusage, RUSAGE_SELF, getrusage};
 
-pub fn get() -> ::libc::rusage {
-    let mut usage = ::libc::rusage {
+quick_error! {
+#[derive(Debug)]
+    pub enum MemoryUsageError {
+        Io(err: ::std::io::Error) { from() }
+    }
+}
+
+pub type Result<T> = ::std::result::Result<T, MemoryUsageError>;
+
+#[derive(Debug)]
+struct MemoryUsage {
+    pub virtual_size: u64,
+    pub resident_size: u64,
+    pub resident_size_max: u64,
+}
+
+#[cfg(target_os="macos")]
+mod darwin {
+    use std::mem::size_of;
+    use libc::*;
+    #[repr(C)]
+    pub struct BasicTaskInfo {
+        pub virtual_size: u64,
+        pub resident_size: u64,
+        pub resident_size_max: u64,
+        pub user_time: timeval,
+        pub system_time: timeval,
+        pub policy: c_int,
+        pub suspend_count: c_uint,
+    }
+
+    impl BasicTaskInfo {
+        pub fn empty() -> BasicTaskInfo {
+            BasicTaskInfo {
+                virtual_size: 0,
+                resident_size: 0,
+                resident_size_max: 0,
+                user_time: timeval {
+                    tv_sec: 0,
+                    tv_usec: 0,
+                },
+                system_time: timeval {
+                    tv_sec: 0,
+                    tv_usec: 0,
+                },
+                policy: 0,
+                suspend_count: 0,
+            }
+        }
+    }
+    mod ffi {
+        use libc::*;
+        use rusage::darwin::BasicTaskInfo;
+        extern "C" {
+            pub fn mach_task_self() -> c_uint;
+            pub fn task_info(task: c_uint,
+                             flavor: c_int,
+                             task_info: *mut BasicTaskInfo,
+                             count: *mut c_uint)
+                             -> c_uint;
+        }
+        // const VM_REGION_TOP_INFO: c_int = 12;
+        // pub fn mach_vm_region(task: c_uint,
+        // address: *mut uintptr_t,
+        // size: *mut u64,
+        // flavor: c_int,
+        // info: *const c_int,
+        // info_count: *mut c_uint,
+        // object_name: *const c_uint)
+        // -> c_int;
+        //
+    }
+    pub fn task_self() -> c_uint {
+        unsafe { ffi::mach_task_self() }
+    }
+    pub fn task_info() -> BasicTaskInfo {
+        let mut info = BasicTaskInfo::empty();
+        let mut count: c_uint = (size_of::<BasicTaskInfo>() / size_of::<c_uint>()) as c_uint;
+        unsafe {
+            ffi::task_info(task_self(), 20, &mut info, &mut count);
+        }
+        info
+    }
+}
+
+#[cfg(target_os="macos")]
+fn get_memory_usage() -> Result<MemoryUsage> {
+    let info = darwin::task_info();
+    Ok(MemoryUsage {
+        virtual_size: info.virtual_size,
+        resident_size: info.resident_size,
+        resident_size_max: info.resident_size_max,
+    })
+}
+
+#[cfg(target_os="linux")]
+fn get_memory_usage() -> Result<MemoryUsage> {
+    use std::fs::File;
+    use std::io::Read;
+    let mut proc_stat = String::new();
+    let _ = try!(try!(File::open("procstat")).read_to_string(&mut proc_stat));
+    let mut tokens = proc_stat.split(" ");
+    Ok(MemoryUsage {
+        virtual_size: tokens.nth(22).unwrap().parse().unwrap_or(0),
+        resident_size: 4 * 1024 * tokens.next().unwrap().parse().unwrap_or(0),
+        resident_size_max: get_rusage().ru_maxrss as u64,
+    })
+}
+
+pub fn get_rusage() -> rusage {
+    let mut usage = rusage {
         ru_idrss: 0,
         ru_nvcsw: 0,
         ru_ixrss: 0,
@@ -25,7 +135,21 @@ pub fn get() -> ::libc::rusage {
         ru_nsignals: 0,
     };
     unsafe {
-        ::libc::getrusage(::libc::RUSAGE_SELF, &mut usage);
+        getrusage(RUSAGE_SELF, &mut usage);
     }
     usage
+}
+
+pub fn start_monitor() {
+    ::std::thread::spawn(|| {
+        loop {
+            ::std::thread::sleep(::std::time::Duration::from_secs(1));
+            let _ = get_memory_usage().map(|usage| {
+                println!("task_info: vsz:{} rsz:{} rszmax:{}",
+                         usage.virtual_size,
+                         usage.resident_size,
+                         usage.resident_size_max)
+            });
+        }
+    });
 }

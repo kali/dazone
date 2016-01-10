@@ -85,6 +85,16 @@ pub fn bibi_cap_gz_dec<'a, 'b>(set: &str,
                   }))
 }
 
+#[cfg(target_os="macos")]
+fn gzcat() -> &'static str {
+    "gzcat"
+}
+
+#[cfg(not(target_os="macos"))]
+fn gzcat() -> &'static str {
+    "zcat"
+}
+
 pub struct CapGzReader {
     options: capnp::message::ReaderOptions,
     stream: io::BufReader<PipeReader>,
@@ -92,7 +102,7 @@ pub struct CapGzReader {
 
 impl CapGzReader {
     pub fn new(file: &path::Path) -> CapGzReader {
-        let child = process::Command::new("gzcat")
+        let child = process::Command::new(gzcat())
                         .arg("-d")
                         .arg(file)
                         .stdout(process::Stdio::piped())
