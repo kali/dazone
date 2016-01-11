@@ -73,6 +73,25 @@ impl Read for PipeReader {
     }
 }
 
+pub fn bibi_cap_dec<'a, 'b>(set: &str,
+                               table: &str)
+                               -> BI<'a, BI<'b, Dx16Result<Reader<OwnedSegments>>>> {
+    let source_root = data_dir_for("cap", set, table);
+    let glob = source_root.clone() + "/*.cap";
+    let files: Vec<path::PathBuf> = ::glob::glob(&glob)
+                                        .unwrap()
+                                        .map(|p| p.unwrap().to_owned())
+                                        .collect();
+    Box::new(files.into_iter()
+                  .map(|f| -> BI<Dx16Result<Reader<OwnedSegments>>> {
+                      let file = fs::File::open(f).unwrap();
+                      Box::new(CapGzReader {
+                          options: capnp::message::ReaderOptions::new(),
+                          stream: BufReader::new(file)
+                      })
+                  }))
+}
+
 pub fn bibi_cap_gz_dec<'a, 'b>(set: &str,
                                table: &str)
                                -> BI<'a, BI<'b, Dx16Result<Reader<OwnedSegments>>>> {

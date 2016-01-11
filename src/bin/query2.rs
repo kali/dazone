@@ -35,23 +35,28 @@ fn main() {
                                 .map(|a| a.parse::<usize>().unwrap())
                                 .unwrap_or(::num_cpus::get() * 2);
 
-    let bibi: BI<BI<([u8; 12], f32)>> = match matches.value_of("INPUT").unwrap_or("cap") {
-        "cap" => {
-            Box::new(dx16::bibi_cap_gz_dec(set, "uservisits")
-                         .take(chunks)
-                         .map(move |chunk| -> BI<([u8; 12], f32)> {
-                             Box::new(chunk.map(move |reader: Dx16Result<Reader<OwnedSegments>>| {
-                                 let reader = reader.unwrap();
-                                 let visit: ::dx16::cap::user_visits::Reader = reader.get_root()
-                                                                                     .unwrap();
-                                 let mut chars = [b' '; 12];
-                                 chars.clone_from_slice(visit.get_source_i_p().unwrap().as_bytes());
-                                 for i in length..chars.len() {
-                                     chars[i] = b' ';
-                                 }
-                                 (chars, visit.get_ad_revenue())
-                             }))
+    let input = matches.value_of("INPUT").unwrap_or("cap");
+    let bibi: BI<BI<([u8; 12], f32)>> = match input {
+        "cap" | "cap-gz" => {
+            Box::new(if input == "cap-gz" {
+                         dx16::bibi_cap_gz_dec(set, "uservisits")
+                     } else {
+                         dx16::bibi_cap_dec(set, "uservisits")
+                     }
+                     .take(chunks)
+                     .map(move |chunk| -> BI<([u8; 12], f32)> {
+                         Box::new(chunk.map(move |reader: Dx16Result<Reader<OwnedSegments>>| {
+                             let reader = reader.unwrap();
+                             let visit: ::dx16::cap::user_visits::Reader = reader.get_root()
+                                                                                 .unwrap();
+                             let mut chars = [b' '; 12];
+                             chars.clone_from_slice(visit.get_source_i_p().unwrap().as_bytes());
+                             for i in length..chars.len() {
+                                 chars[i] = b' ';
+                             }
+                             (chars, visit.get_ad_revenue())
                          }))
+                     }))
         }
         "rmp" => {
             Box::new(dx16::rmp_read::bibi_rmp_gz_dec(set, "uservisits").take(chunks)

@@ -91,10 +91,10 @@ fn loop_files<T: Decodable + Encodable + Capitanable>(set: &str,
         {
             let mut output = cmd.stdout.as_mut().unwrap();
             let mut reader = csv::Reader::from_reader(output.by_ref()).has_headers(false);
-            let mut writer = BufWriter::new(try!(fs::File::create(job.1)))
-                                 .gz_encode(Compression::Default);
             match dst {
                 "rmp-gz" => {
+                    let mut writer = BufWriter::new(try!(fs::File::create(job.1)))
+                                         .gz_encode(Compression::Default);
                     let mut coder = Encoder::new(&mut writer);
                     for item in reader.decode() {
                         let item: T = item.unwrap();
@@ -102,6 +102,15 @@ fn loop_files<T: Decodable + Encodable + Capitanable>(set: &str,
                     }
                 }
                 "cap-gz" => {
+                    let mut writer = BufWriter::new(try!(fs::File::create(job.1)))
+                                         .gz_encode(Compression::Default);
+                    for item in reader.decode() {
+                        let item: T = item.unwrap();
+                        item.write_to_cap(&mut writer).unwrap();
+                    }
+                }
+                "cap" => {
+                    let mut writer = BufWriter::new(try!(fs::File::create(job.1)));
                     for item in reader.decode() {
                         let item: T = item.unwrap();
                         item.write_to_cap(&mut writer).unwrap();
