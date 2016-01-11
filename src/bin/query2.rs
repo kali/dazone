@@ -22,6 +22,7 @@ fn main() {
         (@arg REDUCE: -r --reduce +takes_value "(hash, hashes, tries)")
         (@arg BUCKETS: -b --buckets +takes_value "reduce buckets (256)")
         (@arg PROGRESS: -p --progress "show progressbar")
+        (@arg MEMORY: -m --memory "monitor memory usage")
         (@arg WORKERS: -w --workers +takes_value "worker threads (num_cpu*2)")
     );
     let matches = app.get_matches();
@@ -71,7 +72,9 @@ fn main() {
     let r = |a: &f32, b: &f32| a + b;
     let t1 = ::time::get_time();
 
-    ::dx16::rusage::start_monitor(::std::time::Duration::from_secs(10));
+    if matches.is_present("MEMORY") {
+        ::dx16::rusage::start_monitor(::std::time::Duration::from_secs(10));
+    }
 
     let strategy = matches.value_of("REDUCE").unwrap_or("hashes");
     let groups = match strategy {
