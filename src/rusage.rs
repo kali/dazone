@@ -1,7 +1,8 @@
 use libc::{rusage, RUSAGE_SELF, getrusage};
+use std::time::Duration;
 
 quick_error! {
-#[derive(Debug)]
+    #[derive(Debug)]
     pub enum MemoryUsageError {
         Io(err: ::std::io::Error) { from() }
     }
@@ -10,7 +11,7 @@ quick_error! {
 pub type Result<T> = ::std::result::Result<T, MemoryUsageError>;
 
 #[derive(Debug)]
-struct MemoryUsage {
+pub struct MemoryUsage {
     pub virtual_size: u64,
     pub resident_size: u64,
     pub resident_size_max: u64,
@@ -86,7 +87,7 @@ mod darwin {
 }
 
 #[cfg(target_os="macos")]
-fn get_memory_usage() -> Result<MemoryUsage> {
+pub fn get_memory_usage() -> Result<MemoryUsage> {
     let info = darwin::task_info();
     Ok(MemoryUsage {
         virtual_size: info.virtual_size,
@@ -96,7 +97,7 @@ fn get_memory_usage() -> Result<MemoryUsage> {
 }
 
 #[cfg(target_os="linux")]
-fn get_memory_usage() -> Result<MemoryUsage> {
+pub fn get_memory_usage() -> Result<MemoryUsage> {
     use std::fs::File;
     use std::io::Read;
     let mut proc_stat = String::new();
@@ -140,16 +141,16 @@ pub fn get_rusage() -> rusage {
     usage
 }
 
-pub fn start_monitor() {
-    ::std::thread::spawn(|| {
+pub fn start_monitor(interval: Duration) {
+    ::std::thread::spawn(move || {
         loop {
-            ::std::thread::sleep(::std::time::Duration::from_secs(1));
             let _ = get_memory_usage().map(|usage| {
                 println!("task_info: vsz:{} rsz:{} rszmax:{}",
                          usage.virtual_size,
                          usage.resident_size,
                          usage.resident_size_max)
             });
+            ::std::thread::sleep(interval);
         }
     });
 }
