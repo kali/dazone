@@ -100,12 +100,12 @@ fn get_memory_usage() -> Result<MemoryUsage> {
     use std::fs::File;
     use std::io::Read;
     let mut proc_stat = String::new();
-    let _ = try!(try!(File::open("procstat")).read_to_string(&mut proc_stat));
+    let _ = try!(try!(File::open("/proc/self/stat")).read_to_string(&mut proc_stat));
     let mut tokens = proc_stat.split(" ");
     Ok(MemoryUsage {
         virtual_size: tokens.nth(22).unwrap().parse().unwrap_or(0),
         resident_size: 4 * 1024 * tokens.next().unwrap().parse().unwrap_or(0),
-        resident_size_max: get_rusage().ru_maxrss as u64,
+        resident_size_max: 1024 * get_rusage().ru_maxrss as u64,
     })
 }
 
