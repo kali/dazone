@@ -8,7 +8,7 @@ build = "build.rs"
 glob = "*"
 simple_parallel = "0.2"
 num_cpus = "0.2.6"
-flate2 = "0.2.7"
+#flate2 = "0.2.7"
 scan_fmt = "*"
 pad = "*"
 itertools = "*"
@@ -24,6 +24,9 @@ rayon = "*"
 time = "0.1"
 radix_trie = "0.0.8"
 libc = "*"
+
+[dependencies.flate2]
+git = "http://github.com/kali/flate2-rs"
 
 [build-dependencies]
 capnpc = "*"
