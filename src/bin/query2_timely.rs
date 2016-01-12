@@ -15,16 +15,41 @@ use std::fs::File;
 use std::collections::HashMap;
 
 fn main() {
+    ::dx16::rusage::start_monitor(::std::time::Duration::from_secs(10));
     timely::execute_from_args(std::env::args(), move |root| {
         let mut hashmap = HashMap::new();
         let mut sum = 0usize;
         let index = root.index();
+        let peers = root.peers();
+        let mut seen = 0;
 
         let mut input = root.scoped(|builder| {
-            let (input, uservisits) = builder.new_input::<(Vec<u8>, f32)>();
+            let (input, files) = builder.new_input::<String>();
 
-            let group_count: Stream<_, usize> =
-                uservisits.unary_notify(Exchange::new(|x: &(Vec<u8>, f32)| {
+            let uservisits = files.unary_stream(Exchange::new(move |x| ::dx16::hash(x) as u64),
+                                                "loader",
+                                                move |input, output| {
+                                                    input.for_each(|iter, data| {
+                    println!("worker {}, {:?} files", index, data.len());
+                    for file in data.iter() {
+                        let mut session = output.session(&iter);
+                        for reader in ::dx16::CapGzReader::new(File::open(file).unwrap()) {
+                            let reader = reader.unwrap();
+                            let visit: ::dx16::cap::user_visits::Reader = reader.get_root()
+                                .unwrap();
+                            let chars: Vec<u8> = visit.get_source_i_p()
+                                .unwrap()
+                                .as_bytes()
+                                .into_iter()
+                                .take(8)
+                                .map(|a| *a)
+                                .collect();
+                            session.give((chars, visit.get_ad_revenue()));
+                        }}})
+                                                });
+
+            let group_count =
+                uservisits.unary_notify(Exchange::new(move |x: &(Vec<u8>, f32)| {
                                             ::dx16::hash(&x.0) as u64
                                         }),
                                         "groupby-map",
@@ -33,6 +58,10 @@ fn main() {
                                             notif.notify_at(&RootTimestamp::new(0));
                                             while let Some((_, data)) = input.next() {
                                                 for (k, v) in data.drain(..) {
+                                                    if seen == 0 {
+                                                        println!("first data in {}", index);
+                                                    }
+                                                    seen += 1;
                                                     dx16::aggregators::update_hashmap(&mut hashmap,
                                                                                       &|a, b| {
                                                                                           a + b
@@ -43,9 +72,11 @@ fn main() {
                                             }
                                             while let Some((iter, _)) = notif.next() {
                                                 if hashmap.len() > 0 {
-                                                    println!("groupby {} worker at {:?} {}",
+                                                    println!("groupby {} worker at {:?} seen:{} \
+                                                              mapped:{}",
                                                              index,
                                                              iter,
+                                                             seen,
                                                              hashmap.len());
                                                     output.session(&iter).give(hashmap.len());
                                                     hashmap.clear();
@@ -85,24 +116,13 @@ fn main() {
         });
 
         let mut data = ::dx16::files_for_format("5nodes", "uservisits", "cap");
-        for (i, file) in data.drain(..).enumerate() {
-            if i % root.peers() == root.index() {
-                for reader in ::dx16::CapGzReader::new(File::open(file).unwrap()) {
-                    let reader = reader.unwrap();
-                    let visit: ::dx16::cap::user_visits::Reader = reader.get_root()
-                                                                        .unwrap();
-                    let chars: Vec<u8> = visit.get_source_i_p()
-                                              .unwrap()
-                                              .as_bytes()
-                                              .into_iter()
-                                              .take(8)
-                                              .map(|a| *a)
-                                              .collect();
-                    input.send((chars, visit.get_ad_revenue()))
-                }
+        if root.index() == 0 {
+            for file in data.drain(..) {
+                input.send(file.to_str().unwrap().to_string())
             }
-        }
 
+            println!("input done ({})", root.index());
+        }
         input.close();
         while root.step() {
         }
