@@ -30,6 +30,8 @@ pub mod cap {
 use std::{fs, io, path, process};
 use std::io::{Read, BufReader};
 
+use std::hash::Hash;
+
 use mapred::BI;
 
 use capnp::serialize_packed;
@@ -73,66 +75,59 @@ impl Read for PipeReader {
     }
 }
 
+pub fn files_for_format(set: &str, table: &str, format: &str) -> Vec<path::PathBuf> {
+    let source_root = data_dir_for(format, set, table);
+    let glob = source_root.clone() + "/*." +format;
+    let mut vec:Vec<path::PathBuf> = ::glob::glob(&glob)
+        .unwrap()
+        .map(|p| p.unwrap().to_owned())
+        .collect();
+    vec.sort();
+    vec
+}
+
 pub fn bibi_cap_dec<'a, 'b>(set: &str,
-                               table: &str)
-                               -> BI<'a, BI<'b, Dx16Result<Reader<OwnedSegments>>>> {
-    let source_root = data_dir_for("cap", set, table);
-    let glob = source_root.clone() + "/*.cap";
-    let files: Vec<path::PathBuf> = ::glob::glob(&glob)
-                                        .unwrap()
-                                        .map(|p| p.unwrap().to_owned())
-                                        .collect();
-    Box::new(files.into_iter()
-                  .map(|f| -> BI<Dx16Result<Reader<OwnedSegments>>> {
-                      let file = fs::File::open(f).unwrap();
-                      Box::new(CapGzReader {
-                          options: capnp::message::ReaderOptions::new(),
-                          stream: BufReader::new(file)
-                      })
-                  }))
+                            table: &str)
+-> BI<'a, BI<'b, Dx16Result<Reader<OwnedSegments>>>> {
+    Box::new(files_for_format(set, table, "cap").into_iter()
+             .map(|f| -> BI<Dx16Result<Reader<OwnedSegments>>> {
+                 let file = fs::File::open(f).unwrap();
+                 Box::new(CapGzReader::new(file))
+             }))
 }
 
 pub fn bibi_cap_gz_dec<'a, 'b>(set: &str,
                                table: &str)
-                               -> BI<'a, BI<'b, Dx16Result<Reader<OwnedSegments>>>> {
-    let source_root = data_dir_for("cap-gz", set, table);
-    let glob = source_root.clone() + "/*.cap-gz";
-    let files: Vec<path::PathBuf> = ::glob::glob(&glob)
-                                        .unwrap()
-                                        .map(|p| p.unwrap().to_owned())
-                                        .collect();
-    Box::new(files.into_iter()
-                  .map(|f| -> BI<Dx16Result<Reader<OwnedSegments>>> {
-                      let file = fs::File::open(f).unwrap();
-                      Box::new(CapGzReader {
-                          options: capnp::message::ReaderOptions::new(),
-                          stream: BufReader::new(file.gz_decode().unwrap()),
-                      })
-                  }))
+-> BI<'a, BI<'b, Dx16Result<Reader<OwnedSegments>>>> {
+    Box::new(files_for_format(set, table, "cap-gz").into_iter()
+             .map(|f| -> BI<Dx16Result<Reader<OwnedSegments>>> {
+                 let file = fs::File::open(f).unwrap();
+                 Box::new(CapGzReader::new(file.gz_decode().unwrap()))
+             }))
 }
 
 pub fn bibi_cap_gz_dec_fork<'a, 'b>(set: &str,
                                     table: &str)
-                                    -> BI<'a, BI<'b, Dx16Result<Reader<OwnedSegments>>>> {
+-> BI<'a, BI<'b, Dx16Result<Reader<OwnedSegments>>>> {
     let source_root = data_dir_for("cap-gz", set, table);
     let glob = source_root.clone() + "/*.cap-gz";
     let files: Vec<path::PathBuf> = ::glob::glob(&glob)
-                                        .unwrap()
-                                        .map(|p| p.unwrap().to_owned())
-                                        .collect();
+        .unwrap()
+        .map(|p| p.unwrap().to_owned())
+        .collect();
     Box::new(files.into_iter()
-                  .map(|f| -> BI<Dx16Result<Reader<OwnedSegments>>> {
-                      let child = process::Command::new(gzcat())
-                                      .arg("-d")
-                                      .arg(f)
-                                      .stdout(process::Stdio::piped())
-                                      .spawn()
-                                      .unwrap();
-                      Box::new(CapGzReader {
-                          options: capnp::message::ReaderOptions::new(),
-                          stream: BufReader::new(PipeReader { child: child }),
-                      })
-                  }))
+             .map(|f| -> BI<Dx16Result<Reader<OwnedSegments>>> {
+                 let child = process::Command::new(gzcat())
+                     .arg("-d")
+                     .arg(f)
+                     .stdout(process::Stdio::piped())
+                     .spawn()
+                     .unwrap();
+                 Box::new(CapGzReader {
+                     options: capnp::message::ReaderOptions::new(),
+                     stream: BufReader::new(PipeReader { child: child }),
+                 })
+             }))
 }
 
 #[cfg(target_os="macos")]
@@ -148,6 +143,15 @@ fn gzcat() -> &'static str {
 pub struct CapGzReader<R: Read> {
     options: capnp::message::ReaderOptions,
     stream: io::BufReader<R>,
+}
+
+impl<R: Read> CapGzReader<R> {
+    pub fn new(input:R) -> CapGzReader<R> {
+        CapGzReader {
+            options: capnp::message::ReaderOptions::new(),
+            stream: BufReader::new(input)
+        }
+    }
 }
 
 impl<R: Read> Iterator for CapGzReader<R> {
@@ -166,4 +170,12 @@ impl<R: Read> Iterator for CapGzReader<R> {
             }
         }
     }
+
+}
+
+pub fn hash<K:Hash>(k: &K) -> usize {
+    use std::hash::{Hasher, SipHasher};
+    let mut s = SipHasher::new();
+    k.hash(&mut s);
+    s.finish() as usize
 }

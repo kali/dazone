@@ -303,7 +303,7 @@ impl<'a, 'b, R, V, K> Drop for MultiHashMapInlet<'a, 'b, R, K, V>
     }
 }
 
-fn update_hashmap<'h, 'r, R, K, V>(hash: &'h mut HashMap<K, V>, reducer: &'r R, k: K, v: V)
+pub fn update_hashmap<'h, 'r, R, K, V>(hash: &'h mut HashMap<K, V>, reducer: &'r R, k: K, v: V)
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static

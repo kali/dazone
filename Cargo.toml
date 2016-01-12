@@ -28,5 +28,8 @@ libc = "*"
 [dependencies.flate2]
 git = "http://github.com/kali/flate2-rs"
 
+[dependencies.timely]
+git = "https://github.com/frankmcsherry/timely-dataflow.git"
+
 [build-dependencies]
 capnpc = "*"
