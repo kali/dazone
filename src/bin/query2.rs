@@ -85,6 +85,7 @@ fn main() {
                          (@arg MEMORY: -m --memory "monitor memory usage")
                          (@arg WORKERS: -w --workers +takes_value "worker threads (num_cpu*2)")
                          (@arg HOSTS: -h --hosts +takes_value "hosts, coma sep (for timely)")
+                         (@arg ME: --me +takes_value "my position in hosts (starting at 0)")
                        );
     let matches = app.get_matches();
 
@@ -99,7 +100,10 @@ fn main() {
         buckets: matches.value_of("BUCKETS").unwrap_or("256").parse().unwrap(),
         progress: matches.is_present("PROGRESS"),
         hosts: matches.value_of("HOSTS").map(|x| x.to_string()),
+        me: matches.value_of("ME").map(|x| x.parse().unwrap())
     };
+
+    println!("runner: {:?}", runner);
 
     let t1 = ::time::get_time();
 
@@ -136,7 +140,7 @@ fn main() {
 
 }
 
-#[derive(Clone)]
+#[derive(Clone,Debug)]
 struct Runner {
     set: String,
     input: String,
@@ -146,6 +150,7 @@ struct Runner {
     buckets: usize,
     progress: bool,
     hosts: Option<String>,
+    me: Option<usize>,
 }
 
 impl Runner {
@@ -243,18 +248,20 @@ impl Runner {
     fn run_timely<K>(self)
         where K:FixedBytesArray+Abomonation+Send+Clone+::std::marker::Reflect+::std::hash::Hash+Eq+'static+Debug {
 
-        let host: String = unsafe {
-            let mut buf = [0i8; 1024];
-            let _err = ::libc::gethostname(::std::mem::transmute(&mut buf), buf.len());
-            let cstr = ::std::ffi::CStr::from_ptr(buf.as_ptr());
-            cstr.to_str().unwrap().to_owned()
-        };
-        let host = host.split(".").next().unwrap();
+        fn gethostname() -> String {
+            let host: String = unsafe {
+                let mut buf = [0i8; 1024];
+                let _err = ::libc::gethostname(::std::mem::transmute(&mut buf), buf.len());
+                let cstr = ::std::ffi::CStr::from_ptr(buf.as_ptr());
+                cstr.to_str().unwrap().to_owned()
+            };
+            host.split(".").next().unwrap().to_owned()
+        }
 
         let conf: ::timely::Configuration = match self.hosts.as_ref() {
             Some(hosts) => {
                 let hosts: Vec<String> = hosts.split(",").map(|x| x.to_owned()).collect();
-                let position = hosts.iter().position(|h| h == host).unwrap();
+                let position = self.me.unwrap_or_else(|| hosts.iter().position(|h| h == &*gethostname()).unwrap());
                 let hosts_with_ports: Vec<String> = hosts.iter()
                                                          .enumerate()
                                                          .map(|(index, host)| {
