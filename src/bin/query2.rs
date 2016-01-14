@@ -94,11 +94,11 @@ fn main() {
         chunks: matches.value_of("CHUNKS").unwrap_or("999999999").parse().unwrap(),
         strategy: matches.value_of("REDUCE").unwrap_or("hashes").to_string(),
         workers: matches.value_of("WORKERS")
-            .map(|a| a.parse::<usize>().unwrap())
-            .unwrap_or(::num_cpus::get() * 2),
-            buckets: matches.value_of("BUCKETS").unwrap_or("256").parse().unwrap(),
-            progress: matches.is_present("PROGRESS"),
-            hosts: matches.value_of("HOSTS").map(|x| x.to_string()),
+                        .map(|a| a.parse::<usize>().unwrap())
+                        .unwrap_or(::num_cpus::get() * 2),
+        buckets: matches.value_of("BUCKETS").unwrap_or("256").parse().unwrap(),
+        progress: matches.is_present("PROGRESS"),
+        hosts: matches.value_of("HOSTS").map(|x| x.to_string()),
     };
 
     let t1 = ::time::get_time();
@@ -122,17 +122,17 @@ fn main() {
     let vmsize = ::dx16::rusage::get_memory_usage().unwrap().virtual_size;
     println!("set: {:6} chunks: {:4} length: {:2} strat: {:6} buckets: {:4} workers: {:4} \
               rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:5}",
-              &*runner.set,
-              runner.chunks,
-              length,
-              &*runner.strategy,
-              runner.buckets,
-              runner.workers,
-              usage.ru_maxrss / 1024 / 1024,
-              vmsize / 1024 / 1024,
-              usage.ru_utime.tv_sec,
-              usage.ru_stime.tv_sec,
-              (t2 - t1).num_seconds());
+             &*runner.set,
+             runner.chunks,
+             length,
+             &*runner.strategy,
+             runner.buckets,
+             runner.workers,
+             usage.ru_maxrss / 1024 / 1024,
+             vmsize / 1024 / 1024,
+             usage.ru_utime.tv_sec,
+             usage.ru_stime.tv_sec,
+             (t2 - t1).num_seconds());
 
 }
 
@@ -151,42 +151,42 @@ struct Runner {
 impl Runner {
     fn run<K>(self)
         where K:FixedBytesArray+Abomonation+Send+Clone+::std::marker::Reflect+::std::hash::Hash+Eq+'static+Debug {
-            if self.strategy == "timely" {
-                self.run_timely::<K>();
-            } else {
-                self.run_standalone::<K>();
-            }
+        if self.strategy == "timely" {
+            self.run_timely::<K>();
+        } else {
+            self.run_standalone::<K>();
         }
+    }
 
     fn sharded_input<'a, K>(&self, index:usize, peers:usize) -> BI<'a, BI<'a, (K,f32)>>
         where K:FixedBytesArray+Abomonation+Send+Clone+::std::marker::Reflect+::std::hash::Hash+Eq+'static+Debug {
-            match &*self.input {
-                "cap" | "cap-gz" => {
-                    Box::new(if &*self.input == "cap-gz" {
-                        dx16::bibi_cap_gz_dec(&*self.set, "uservisits")
-                    } else {
-                        dx16::bibi_cap_dec(&*self.set, "uservisits")
-                    }
-                    .take(self.chunks)
-                    .enumerate()
-                    .filter_map(move |(i, f)| {
-                        if i % peers == index {
-                            Some(f)
-                        } else {
-                            None
-                        }
-                    })
-                    .map(move |chunk| -> BI<(K, f32)> {
-                        Box::new(chunk.map(move |reader: Dx16Result<Reader<OwnedSegments>>| {
-                            let reader = reader.unwrap();
-                            let visit: ::dx16::cap::user_visits::Reader = reader.get_root()
-                                .unwrap();
-                            (K::prefix(visit.get_source_i_p().unwrap()),
-                            visit.get_ad_revenue())
-                        }))
-                    }))
-                }
-                "rmp" => {
+        match &*self.input {
+            "cap" | "cap-gz" => {
+                Box::new(if &*self.input == "cap-gz" {
+                             dx16::bibi_cap_gz_dec(&*self.set, "uservisits")
+                         } else {
+                             dx16::bibi_cap_dec(&*self.set, "uservisits")
+                         }
+                         .take(self.chunks)
+                         .enumerate()
+                         .filter_map(move |(i, f)| {
+                             if i % peers == index {
+                                 Some(f)
+                             } else {
+                                 None
+                             }
+                         })
+                         .map(move |chunk| -> BI<(K, f32)> {
+                             Box::new(chunk.map(move |reader: Dx16Result<Reader<OwnedSegments>>| {
+                                 let reader = reader.unwrap();
+                                 let visit: ::dx16::cap::user_visits::Reader = reader.get_root()
+                                                                                     .unwrap();
+                                 (K::prefix(visit.get_source_i_p().unwrap()),
+                                  visit.get_ad_revenue())
+                             }))
+                         }))
+            }
+            "rmp" => {
                     Box::new(dx16::rmp_read::bibi_rmp_gz_dec(&*self.set, "uservisits").take(self.chunks)
                              .enumerate()
                              .filter_map(move |(i,f)| if i % peers == index { Some(f) } else { None })
@@ -197,80 +197,86 @@ impl Runner {
                                  }))
                              }))
                 }
-                any => panic!("unknown input format {}", any),
-            }
+            any => panic!("unknown input format {}", any),
         }
+    }
 
     fn run_standalone<K>(&self)
         where K:FixedBytesArray+Abomonation+Send+Clone+::std::marker::Reflect+::std::hash::Hash+Eq+'static+Debug {
-            let r = |a: &f32, b: &f32| a + b;
-            let bibi = self.sharded_input::<K>(0, 1);
-            let groups = match &*self.strategy {
-                "hash" => {
-                    let mut aggregator = ::dx16::aggregators::HashMapAggregator::new(&r);
-                    MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
-                        .with_progress(self.progress)
-                        .with_workers(self.workers)
-                        .run(bibi, &mut aggregator);
-                    aggregator.converge();
-                    aggregator.len()
-                }
-                "hashes" => {
-                    let mut aggregator = ::dx16::aggregators::MultiHashMapAggregator::new(&r,
-                                                                                          self.buckets);
-                    MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
-                        .with_progress(self.progress)
-                        .with_workers(self.workers)
-                        .run(bibi, &mut aggregator);
-                    aggregator.converge();
-                    aggregator.len()
-                }
-                "tries" => {
-                    let mut aggregator = ::dx16::aggregators::MultiTrieAggregator::new(&r,
-                                                                                       self.buckets);
-                    MapOp::new_map_reduce(|(a, b): (K, f32)| Emit::One(a.to_vec(), b))
-                                                    .with_progress(self.progress)
-                                                    .with_workers(self.workers)
-                                                    .run(bibi, &mut aggregator);
-                    aggregator.converge();
-                    aggregator.len()
-                }
-                s => panic!("unknown strategy {}", s),
-            };
-            println!("groups: {}", groups);
-        }
+        let r = |a: &f32, b: &f32| a + b;
+        let bibi = self.sharded_input::<K>(0, 1);
+        let groups = match &*self.strategy {
+            "hash" => {
+                let mut aggregator = ::dx16::aggregators::HashMapAggregator::new(&r);
+                MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
+                    .with_progress(self.progress)
+                    .with_workers(self.workers)
+                    .run(bibi, &mut aggregator);
+                aggregator.converge();
+                aggregator.len()
+            }
+            "hashes" => {
+                let mut aggregator = ::dx16::aggregators::MultiHashMapAggregator::new(&r,
+                                                                                      self.buckets);
+                MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
+                    .with_progress(self.progress)
+                    .with_workers(self.workers)
+                    .run(bibi, &mut aggregator);
+                aggregator.converge();
+                aggregator.len()
+            }
+            "tries" => {
+                let mut aggregator = ::dx16::aggregators::MultiTrieAggregator::new(&r,
+                                                                                   self.buckets);
+                MapOp::new_map_reduce(|(a, b): (K, f32)| Emit::One(a.to_vec(), b))
+                    .with_progress(self.progress)
+                    .with_workers(self.workers)
+                    .run(bibi, &mut aggregator);
+                aggregator.converge();
+                aggregator.len()
+            }
+            s => panic!("unknown strategy {}", s),
+        };
+        println!("groups: {}", groups);
+    }
 
     fn run_timely<K>(self)
         where K:FixedBytesArray+Abomonation+Send+Clone+::std::marker::Reflect+::std::hash::Hash+Eq+'static+Debug {
-            let host:String = unsafe {
-                let mut buf = [0i8; 1024];
-                let _err = ::libc::gethostname(::std::mem::transmute(&mut buf), buf.len());
-                let cstr = ::std::ffi::CStr::from_ptr(buf.as_ptr());
-                cstr.to_str().unwrap().to_owned()
-            };
-            let host = host.split(".").next().unwrap();
+        let host: String = unsafe {
+            let mut buf = [0i8; 1024];
+            let _err = ::libc::gethostname(::std::mem::transmute(&mut buf), buf.len());
+            let cstr = ::std::ffi::CStr::from_ptr(buf.as_ptr());
+            cstr.to_str().unwrap().to_owned()
+        };
+        let host = host.split(".").next().unwrap();
 
-            let conf: ::timely::Configuration = match self.hosts.as_ref() {
-                Some(hosts) => {
-                    let hosts:Vec<String> = hosts.split(",").map(|x|x.to_owned()).collect();
-                    let position = hosts.iter().position(|h| h==host).unwrap();
-                    ::timely::Configuration::Cluster(self.workers, position, hosts, false)
-                }
-                None => ::timely::Configuration::Process(self.workers),
-            };
-            timely::execute(conf, move |root| {
-                let mut hashmap = HashMap::new();
-                let mut sum = 0usize;
-                let index = root.index();
-                let peers = root.peers();
-                let bibi = self.sharded_input::<K>(index, peers);
-                println!("worker:{}/{} start", index, peers);
+        let conf: ::timely::Configuration = match self.hosts.as_ref() {
+            Some(hosts) => {
+                let hosts: Vec<String> = hosts.split(",").map(|x| x.to_owned()).collect();
+                let position = hosts.iter().position(|h| h == host).unwrap();
+                let hosts_with_ports: Vec<String> = hosts.iter()
+                                                         .enumerate()
+                                                         .map(|(index, host)| {
+                                                             format!("{}:{}", host, 2101 + index)
+                                                         })
+                                                         .collect();
+                ::timely::Configuration::Cluster(self.workers, position, hosts_with_ports, false)
+            }
+            None => ::timely::Configuration::Process(self.workers),
+        };
+        timely::execute(conf, move |root| {
+            let mut hashmap = HashMap::new();
+            let mut sum = 0usize;
+            let index = root.index();
+            let peers = root.peers();
+            let bibi = self.sharded_input::<K>(index, peers);
+            println!("worker:{}/{} start", index, peers);
 
-                root.scoped(move |builder| {
+            root.scoped(move |builder| {
 
-                    let uservisits = bibi.flat_map(|f| f).to_stream(builder);
+                let uservisits = bibi.flat_map(|f| f).to_stream(builder);
 
-                    let group_count =
+                let group_count =
                         uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
                             ::dx16::hash(&(x.0)) as u64
                         }),
@@ -296,31 +302,31 @@ impl Runner {
                             }
                         });
 
-                    let _count: Stream<_, ()> =
-                        group_count.unary_notify(Exchange::new(|_| 0u64),
-                        "count",
-                        vec![RootTimestamp::new(0)],
-                        move |input, _, notify| {
-                            notify.notify_at(&RootTimestamp::new(0));
-                            while let Some((_, data)) = input.next() {
-                                for x in data.drain(..) {
-                                    sum += x;
-                                }
-                            }
-                            notify.for_each(|_, _| {
-                                if sum > 0 {
-                                    println!("worker:{} groups:{}",
-                                             index,
-                                             sum);
-                                    sum = 0;
-                                }
-                            })
-                        });
+                let _count: Stream<_, ()> =
+                    group_count.unary_notify(Exchange::new(|_| 0u64),
+                                             "count",
+                                             vec![RootTimestamp::new(0)],
+                                             move |input, _, notify| {
+                                                 notify.notify_at(&RootTimestamp::new(0));
+                                                 while let Some((_, data)) = input.next() {
+                                                     for x in data.drain(..) {
+                                                         sum += x;
+                                                     }
+                                                 }
+                                                 notify.for_each(|_, _| {
+                                                     if sum > 0 {
+                                                         println!("worker:{} groups:{}",
+                                                                  index,
+                                                                  sum);
+                                                         sum = 0;
+                                                     }
+                                                 })
+                                             });
 
-                });
-
-                while root.step() {
-                }
             });
-        }
+
+            while root.step() {
+            }
+        });
+    }
 }
