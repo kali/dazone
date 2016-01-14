@@ -282,7 +282,7 @@ impl Runner {
             let bibi = self.sharded_input::<K>(index, peers);
             println!("worker:{}/{} start", index, peers);
 
-            root.scoped(move |builder| {
+            root.scoped::<u64,_,_>(move |builder| {
 
                 let uservisits = bibi.flat_map(|f| f).to_stream(builder);
 
@@ -291,10 +291,10 @@ impl Runner {
                             ::dx16::hash(&(x.0)) as u64
                         }),
                         "groupby-map",
-                        vec![RootTimestamp::new(0)],
+                        vec![],
                         move |input, output, notif| {
-                            notif.notify_at(&RootTimestamp::new(0));
-                            while let Some((_, data)) = input.next() {
+                            while let Some((time, data)) = input.next() {
+                                notif.notify_at(time);
                                 for (k, v) in data.drain(..) {
                                     dx16::aggregators::update_hashmap(&mut hashmap,
                                                                       &|a, b| {
@@ -316,10 +316,10 @@ impl Runner {
                 let _count: Stream<_, ()> =
                     group_count.unary_notify(Exchange::new(|_| 0u64),
                                              "count",
-                                             vec![RootTimestamp::new(0)],
+                                             vec![],
                                              move |input, _, notify| {
-                                                 notify.notify_at(&RootTimestamp::new(0));
-                                                 while let Some((_, data)) = input.next() {
+                                                 while let Some((time, data)) = input.next() {
+                                                    notify.notify_at(time);
                                                     println!("worker {} receiving {} counts ", index, data.len());
                                                      for x in data.drain(..) {
                                                          sum += x;
