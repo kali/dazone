@@ -132,23 +132,14 @@ fn run<K>() where
 
                                         });
 
-            let _count = group_count.unary_notify(Exchange::new(|_| 0u64),
+            let _count:Stream<_,()> = group_count.unary_stream(Exchange::new(|_| 0u64),
                                                   "count",
-                                                  vec![RootTimestamp::new(0)],
-                                                  move |input, output, notif| {
-                                                      notif.notify_at(&RootTimestamp::new(0));
+                                                  move |input, _| {
                                                       while let Some((_, data)) = input.next() {
                                                           for x in data.drain(..) {
                                                               sum += x;
                                                           }
                                                       }
-                                                      while let Some((iter, _)) = notif.next() {
-                                                          if sum > 0 {
-                                                              output.session(&iter).give(sum);
-                                                              sum = 0;
-                                                          }
-                                                      }
-
                                                   });
 
         });
