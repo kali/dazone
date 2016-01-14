@@ -1,5 +1,5 @@
 use libc::{rusage, RUSAGE_SELF, getrusage};
-use std::time::Duration;
+use ::std::time::Duration;
 
 quick_error! {
     #[derive(Debug)]
@@ -144,13 +144,17 @@ pub fn get_rusage() -> rusage {
 pub fn start_monitor(interval: Duration) {
     ::std::thread::spawn(move || {
         loop {
-            let _ = get_memory_usage().map(|usage| {
-                println!("task_info: vsz:{} rsz:{} rszmax:{}",
-                         usage.virtual_size,
-                         usage.resident_size,
-                         usage.resident_size_max)
-            });
+            dump_memory_stats();
             ::std::thread::sleep(interval);
         }
+    });
+}
+
+pub fn dump_memory_stats() {
+    let _ = get_memory_usage().map(|usage| {
+        println!("task_info: vsz:{} rsz:{} rszmax:{}",
+                 usage.virtual_size,
+                 usage.resident_size,
+                 usage.resident_size_max)
     });
 }
