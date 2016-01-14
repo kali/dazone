@@ -24,6 +24,7 @@ rayon = "*"
 time = "0.1"
 radix_trie = "0.0.8"
 libc = "*"
+abomonation = "0.4.2"
 
 [dependencies.flate2]
 git = "http://github.com/kali/flate2-rs"
