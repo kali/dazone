@@ -306,6 +306,7 @@ impl Runner {
                             }
                             while let Some((iter, _)) = notif.next() {
                                 if hashmap.len() > 0 {
+                                    println!("worker {} map done, contributing ({})", index, hashmap.len());
                                     output.session(&iter).give(hashmap.len());
                                     hashmap.clear();
                                 }
@@ -319,13 +320,14 @@ impl Runner {
                                              move |input, _, notify| {
                                                  notify.notify_at(&RootTimestamp::new(0));
                                                  while let Some((_, data)) = input.next() {
+                                                    println!("worker {} receiving {} counts ", index, data.len());
                                                      for x in data.drain(..) {
                                                          sum += x;
                                                      }
                                                  }
                                                  notify.for_each(|_, _| {
                                                      if sum > 0 {
-                                                         println!("worker:{} groups:{}",
+                                                         println!("XXXX worker:{} groups:{} XXXX",
                                                                   index,
                                                                   sum);
                                                          sum = 0;
