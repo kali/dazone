@@ -242,6 +242,7 @@ impl Runner {
 
     fn run_timely<K>(self)
         where K:FixedBytesArray+Abomonation+Send+Clone+::std::marker::Reflect+::std::hash::Hash+Eq+'static+Debug {
+
         let host: String = unsafe {
             let mut buf = [0i8; 1024];
             let _err = ::libc::gethostname(::std::mem::transmute(&mut buf), buf.len());
@@ -260,10 +261,12 @@ impl Runner {
                                                              format!("{}:{}", host, 2101 + index)
                                                          })
                                                          .collect();
+                println!("workers:{} hosts_with_ports:{:?} me:{}", self.workers, hosts_with_ports, position);
                 ::timely::Configuration::Cluster(self.workers, position, hosts_with_ports, false)
             }
             None => ::timely::Configuration::Process(self.workers),
         };
+
         timely::execute(conf, move |root| {
             let mut hashmap = HashMap::new();
             let mut sum = 0usize;
