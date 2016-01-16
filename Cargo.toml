@@ -2,7 +2,6 @@
 name = "dx16"
 version = "0.1.0"
 authors = ["Mathieu Poumeyrol <kali@zoy.org>"]
-build = "build.rs"
 
 [dependencies]
 glob = "*"
@@ -26,11 +25,12 @@ radix_trie = "0.0.8"
 libc = "*"
 abomonation = "0.4.2"
 
+[dependencies.capdata]
+path = "capdata"
+
 [dependencies.flate2]
 git = "http://github.com/kali/flate2-rs"
 
 [dependencies.timely]
 git = "https://github.com/frankmcsherry/timely-dataflow.git"
 
-[build-dependencies]
-capnpc = "*"

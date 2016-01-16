@@ -1,6 +1,8 @@
 extern crate dx16;
 extern crate glob;
 extern crate capnp;
+extern crate capdata as cap;
+
 
 use dx16::Dx16Result;
 
@@ -18,7 +20,7 @@ fn scan(set: &str, table: &str) -> Dx16Result<()> {
     let data = dx16::bibi_cap_gz_dec(set, table);
     let result = FilterCountOp::filter_count(|r: Dx16Result<Reader<OwnedSegments>>| {
                                                  let r = r.unwrap();
-                                                 let ranking: ::dx16::cap::ranking::Reader =
+                                                 let ranking: cap::ranking::Reader =
                                                      r.get_root()
                                                       .unwrap();
                                                  ranking.get_pagerank() > 10

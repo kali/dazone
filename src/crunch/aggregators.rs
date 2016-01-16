@@ -4,7 +4,7 @@ use std::hash::Hash;
 use radix_trie::{Trie, TrieKey};
 use std::sync::Mutex;
 
-use mapred::{Aggregator, Inlet};
+use super::{Aggregator, Inlet};
 
 // ************************** HashMap Aggregator *****************************
 

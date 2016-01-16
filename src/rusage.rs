@@ -1,4 +1,7 @@
-use libc::{rusage, RUSAGE_SELF, getrusage};
+extern crate time;
+extern crate libc;
+
+use self::libc::{rusage, RUSAGE_SELF, getrusage};
 use ::std::time::Duration;
 
 quick_error! {
@@ -20,7 +23,7 @@ pub struct MemoryUsage {
 #[cfg(target_os="macos")]
 mod darwin {
     use std::mem::size_of;
-    use libc::*;
+    use super::libc::*;
     #[repr(C)]
     pub struct BasicTaskInfo {
         pub virtual_size: u64,
@@ -52,7 +55,7 @@ mod darwin {
         }
     }
     mod ffi {
-        use libc::*;
+        use super::super::libc::*;
         use rusage::darwin::BasicTaskInfo;
         extern "C" {
             pub fn mach_task_self() -> c_uint;
@@ -120,7 +123,7 @@ pub fn get_rusage() -> rusage {
         ru_minflt: 0,
         ru_oublock: 0,
         ru_nivcsw: 0,
-        ru_stime: ::libc::timeval {
+        ru_stime: libc::timeval {
             tv_sec: 0,
             tv_usec: 0,
         },
@@ -129,7 +132,7 @@ pub fn get_rusage() -> rusage {
         ru_majflt: 0,
         ru_msgrcv: 0,
         ru_msgsnd: 0,
-        ru_utime: ::libc::timeval {
+        ru_utime: libc::timeval {
             tv_sec: 0,
             tv_usec: 0,
         },

@@ -1,0 +1,11 @@
+[package]
+name = "capdata"
+version = "0.1.0"
+authors = ["Mathieu Poumeyrol <kali@zoy.org>"]
+build = "build.rs"
+
+[dependencies]
+capnp = "*"
+
+[build-dependencies]
+capnpc = "*"

@@ -1,44 +1,46 @@
+extern crate rmp;
+extern crate rmp_serialize;
+extern crate rustc_serialize;
+
 use std::marker::PhantomData;
-use std::{io, path, process};
+use std::io;
 
-use rustc_serialize::Decodable;
+use self::rustc_serialize::Decodable;
+use self::rmp_serialize::decode::Decoder;
 
-use rmp;
-use rmp_serialize::decode::Decoder;
-
-use mapred::BI;
-use Dx16Error;
+use crunch::BI;
 use Dx16Result;
+use Dx16Error;
 
-
-pub struct RMPReader<T: Decodable> {
-    stream: Decoder<io::BufReader<::PipeReader>>,
+pub struct RMPReader<R, T>
+    where R: io::Read,
+          T: Decodable + Send
+{
+    stream: Decoder<io::BufReader<R>>,
     phantom: PhantomData<T>,
 }
 
-impl<T: Decodable> RMPReader<T> {
-    pub fn new(file: &path::Path) -> RMPReader<T> {
-        let child = process::Command::new("gzcat")
-                        .arg("-d")
-                        .arg(file)
-                        .stdout(process::Stdio::piped())
-                        .spawn()
-                        .unwrap();
+impl<R, T> RMPReader<R, T>
+    where R: io::Read,
+          T: Decodable + Send
+{
+    pub fn new(file: R) -> RMPReader<R, T> {
         RMPReader {
-            stream: Decoder::new(io::BufReader::new(::PipeReader { child: child })),
+            stream: Decoder::new(io::BufReader::new(file)),
             phantom: PhantomData,
         }
     }
 }
 
-unsafe impl<T: Decodable> Send for RMPReader<T> {}
-
-impl<T: Decodable> Iterator for RMPReader<T> {
+impl<R, T> Iterator for RMPReader<R, T>
+    where R: io::Read,
+          T: Decodable + Send
+{
     type Item = Dx16Result<T>;
 
     fn next(&mut self) -> Option<Dx16Result<T>> {
-        use rmp_serialize::decode::Error::InvalidMarkerRead;
-        use rmp::decode::ReadError;
+        use self::rmp_serialize::decode::Error::InvalidMarkerRead;
+        use self::rmp::decode::ReadError;
         let res: Result<T, _> = Decodable::decode(&mut self.stream);
         match res {
             Err(InvalidMarkerRead(ReadError::UnexpectedEOF)) => None,
@@ -48,17 +50,12 @@ impl<T: Decodable> Iterator for RMPReader<T> {
     }
 }
 
-pub fn bibi_rmp_gz_dec<'a, 'b, T>(set: &str, table: &str) -> BI<'a, BI<'b, Dx16Result<T>>>
-    where T: Decodable + 'static
+pub fn bibi_gz<'a, 'b, T>(set: &str, table: &str) -> BI<'a, BI<'b, Dx16Result<T>>>
+    where T: Decodable + 'static + Send
 {
-    let source_root = ::data_dir_for("rmp-gz", set, table);
-    let glob = source_root.clone() + "/*.rmp-gz";
-    let files: Vec<path::PathBuf> = ::glob::glob(&glob)
-                                        .unwrap()
-                                        .map(|p| p.unwrap().to_owned())
-                                        .collect();
-    Box::new(files.into_iter()
-                  .map(|f| -> BI<Dx16Result<T>> { Box::new(RMPReader::new(&f)) }))
+    Box::new(super::files_for_format(set, table, "rmp-gz")
+                 .into_iter()
+                 .map(|f| -> BI<Dx16Result<T>> { Box::new(RMPReader::new(super::gz_read(f))) }))
 }
 
 pub struct RankingRMPReader<R: io::Read> {
@@ -74,12 +71,11 @@ impl<R: io::Read> RankingRMPReader<R> {
         }
     }
 }
-
 impl<R: io::Read> Iterator for RankingRMPReader<R> {
     type Item = Dx16Result<u32>;
 
     fn next(&mut self) -> Option<Dx16Result<u32>> {
-        use rmp::decode::*;
+        use self::rmp::decode::*;
         let _marker = match read_marker(&mut self.stream) {
             Err(rmp::decode::MarkerReadError::UnexpectedEOF) => return None,
             Err(error) => panic!(error),

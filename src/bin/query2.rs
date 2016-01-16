@@ -1,8 +1,8 @@
 #![feature(reflect_marker)]
-#![feature(cstring_into)]
 
 extern crate dx16;
 extern crate capnp;
+extern crate capdata as cap;
 #[macro_use]
 extern crate clap;
 extern crate time;
@@ -12,11 +12,10 @@ extern crate timely;
 extern crate libc;
 
 use dx16::Dx16Result;
-use dx16::mapred::*;
+use dx16::crunch::*;
 
 use timely::dataflow::*;
 use timely::dataflow::operators::*;
-use timely::progress::timestamp::RootTimestamp;
 use timely::dataflow::channels::pact::Exchange;
 
 use capnp::serialize::OwnedSegments;
@@ -28,6 +27,7 @@ use std::collections::HashMap;
 use abomonation::Abomonation;
 
 use std::fmt::Debug;
+
 
 trait FixedBytesArray {
     fn prefix(s: &str) -> Self;
@@ -100,7 +100,7 @@ fn main() {
         buckets: matches.value_of("BUCKETS").unwrap_or("256").parse().unwrap(),
         progress: matches.is_present("PROGRESS"),
         hosts: matches.value_of("HOSTS").map(|x| x.to_string()),
-        me: matches.value_of("ME").map(|x| x.parse().unwrap())
+        me: matches.value_of("ME").map(|x| x.parse().unwrap()),
     };
 
     println!("runner: {:?}", runner);
@@ -168,9 +168,9 @@ impl Runner {
         match &*self.input {
             "cap" | "cap-gz" => {
                 Box::new(if &*self.input == "cap-gz" {
-                             dx16::bibi_cap_gz_dec(&*self.set, "uservisits")
+                             dx16::files::cap::bibi_gz(&*self.set, "uservisits")
                          } else {
-                             dx16::bibi_cap_dec(&*self.set, "uservisits")
+                             dx16::files::cap::bibi(&*self.set, "uservisits")
                          }
                          .take(self.chunks)
                          .enumerate()
@@ -184,19 +184,23 @@ impl Runner {
                          .map(move |chunk| -> BI<(K, f32)> {
                              Box::new(chunk.map(move |reader: Dx16Result<Reader<OwnedSegments>>| {
                                  let reader = reader.unwrap();
-                                 let visit: ::dx16::cap::user_visits::Reader = reader.get_root()
-                                                                                     .unwrap();
+                                 let visit: cap::user_visits::Reader = reader.get_root()
+                                                                             .unwrap();
                                  (K::prefix(visit.get_source_i_p().unwrap()),
                                   visit.get_ad_revenue())
                              }))
                          }))
             }
-            "rmp" => {
-                    Box::new(dx16::rmp_read::bibi_rmp_gz_dec(&*self.set, "uservisits").take(self.chunks)
+            "rmp" | "csv" => {
+                    Box::new(if &* self.input == "csv" {
+                        dx16::files::csv::bibi(&*self.set, "uservisits")
+                    } else {
+                        dx16::files::rmp::bibi_gz(&*self.set, "uservisits")
+                    }.take(self.chunks)
                              .enumerate()
                              .filter_map(move |(i,f)| if i % peers == index { Some(f) } else { None })
                              .map(move |chunk| -> BI<(K, f32)> {
-                                 Box::new(chunk.map(move |reader: Dx16Result<::dx16::data::UserVisits>| {
+                                 Box::new(chunk.map(move |reader: Dx16Result<::dx16::data::pod::UserVisits>| {
                                      let visit = reader.unwrap();
                                      (K::prefix(&*visit.source_ip), visit.ad_revenue)
                                  }))
@@ -212,7 +216,7 @@ impl Runner {
         let bibi = self.sharded_input::<K>(0, 1);
         let groups = match &*self.strategy {
             "hash" => {
-                let mut aggregator = ::dx16::aggregators::HashMapAggregator::new(&r);
+                let mut aggregator = ::dx16::crunch::aggregators::HashMapAggregator::new(&r);
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
                     .with_progress(self.progress)
                     .with_workers(self.workers)
@@ -221,7 +225,7 @@ impl Runner {
                 aggregator.len()
             }
             "hashes" => {
-                let mut aggregator = ::dx16::aggregators::MultiHashMapAggregator::new(&r,
+                let mut aggregator = ::dx16::crunch::aggregators::MultiHashMapAggregator::new(&r,
                                                                                       self.buckets);
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
                     .with_progress(self.progress)
@@ -231,7 +235,7 @@ impl Runner {
                 aggregator.len()
             }
             "tries" => {
-                let mut aggregator = ::dx16::aggregators::MultiTrieAggregator::new(&r,
+                let mut aggregator = ::dx16::crunch::aggregators::MultiTrieAggregator::new(&r,
                                                                                    self.buckets);
                 MapOp::new_map_reduce(|(a, b): (K, f32)| Emit::One(a.to_vec(), b))
                     .with_progress(self.progress)
@@ -261,14 +265,19 @@ impl Runner {
         let conf: ::timely::Configuration = match self.hosts.as_ref() {
             Some(hosts) => {
                 let hosts: Vec<String> = hosts.split(",").map(|x| x.to_owned()).collect();
-                let position = self.me.unwrap_or_else(|| hosts.iter().position(|h| h == &*gethostname()).unwrap());
+                let position = self.me.unwrap_or_else(|| {
+                    hosts.iter().position(|h| h == &*gethostname()).unwrap()
+                });
                 let hosts_with_ports: Vec<String> = hosts.iter()
                                                          .enumerate()
                                                          .map(|(index, host)| {
                                                              format!("{}:{}", host, 2101 + index)
                                                          })
                                                          .collect();
-                println!("workers:{} hosts_with_ports:{:?} me:{}", self.workers, hosts_with_ports, position);
+                println!("workers:{} hosts_with_ports:{:?} me:{}",
+                         self.workers,
+                         hosts_with_ports,
+                         position);
                 ::timely::Configuration::Cluster(self.workers, position, hosts_with_ports, false)
             }
             None => ::timely::Configuration::Process(self.workers),
@@ -296,7 +305,7 @@ impl Runner {
                             while let Some((time, data)) = input.next() {
                                 notif.notify_at(time);
                                 for (k, v) in data.drain(..) {
-                                    dx16::aggregators::update_hashmap(&mut hashmap,
+                                    dx16::crunch::aggregators::update_hashmap(&mut hashmap,
                                                                       &|a, b| {
                                                                           a + b
                                                                       },

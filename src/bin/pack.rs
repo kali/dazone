@@ -25,7 +25,7 @@ use rustc_serialize::{Encodable, Decodable};
 
 use dx16::Dx16Result;
 use dx16::data;
-use dx16::data::Capitanable;
+use dx16::data::cap::Capitanable;
 
 use pbr::ProgressBar;
 
@@ -52,19 +52,17 @@ fn main() {
     let table = matches.value_of("TABLE").unwrap();
     let dst = matches.value_of("FORMAT").unwrap();
     match &*table {
-        "rankings" => loop_files::<data::Ranking>(set, "rankings", &*dst).unwrap(),
-        "uservisits" => loop_files::<data::UserVisits>(set, "uservisits", &*dst).unwrap(),
+        "rankings" => loop_files::<data::pod::Ranking>(set, "rankings", &*dst).unwrap(),
+        "uservisits" => loop_files::<data::pod::UserVisits>(set, "uservisits", &*dst).unwrap(),
         t => panic!("unknwon table {}", &*t),
     }
 }
 
-fn loop_files<T: Decodable + Encodable + Capitanable>(set: &str,
-                                                      table: &str,
-                                                      dst: &str)
-                                                      -> Dx16Result<()> {
-    let source_root = dx16::data_dir_for("text-deflate", set, table);
-
-    let target_root = dx16::data_dir_for(dst, set, table);
+fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
+    where T: Decodable + Encodable + Capitanable
+{
+    let source_root = dx16::files::data_dir_for("text-deflate", set, table);
+    let target_root = dx16::files::data_dir_for(dst, set, table);
     let _ = fs::remove_dir_all(target_root.clone());
     try!(fs::create_dir_all(target_root.clone()));
     let glob = source_root.clone() + "/*.deflate";
