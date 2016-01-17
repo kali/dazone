@@ -10,7 +10,7 @@ use super::flate2::FlateReadExt;
 
 use crunch::BI;
 
-use ::{ Dx16Error, Dx16Result};
+use {Dx16Error, Dx16Result};
 
 pub struct CapReader<R: io::Read> {
     options: capnp::message::ReaderOptions,

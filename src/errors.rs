@@ -21,4 +21,3 @@ quick_error! {
 }
 
 pub type Dx16Result<T> = Result<T, Dx16Error>;
-

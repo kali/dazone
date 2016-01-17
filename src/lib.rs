@@ -22,4 +22,3 @@ pub fn hash<K: Hash>(k: &K) -> usize {
     k.hash(&mut s);
     s.finish() as usize
 }
-

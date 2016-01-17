@@ -225,8 +225,8 @@ impl Runner {
                 aggregator.len()
             }
             "hashes" => {
-                let mut aggregator = ::dx16::crunch::aggregators::MultiHashMapAggregator::new(&r,
-                                                                                      self.buckets);
+                let mut aggregator =
+                    ::dx16::crunch::aggregators::MultiHashMapAggregator::new(&r, self.buckets);
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
                     .with_progress(self.progress)
                     .with_workers(self.workers)
@@ -235,8 +235,8 @@ impl Runner {
                 aggregator.len()
             }
             "tries" => {
-                let mut aggregator = ::dx16::crunch::aggregators::MultiTrieAggregator::new(&r,
-                                                                                   self.buckets);
+                let mut aggregator =
+                    ::dx16::crunch::aggregators::MultiTrieAggregator::new(&r, self.buckets);
                 MapOp::new_map_reduce(|(a, b): (K, f32)| Emit::One(a.to_vec(), b))
                     .with_progress(self.progress)
                     .with_workers(self.workers)

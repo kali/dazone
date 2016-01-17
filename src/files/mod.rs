@@ -47,21 +47,21 @@ impl io::Read for PipeReader {
     }
 }
 
-pub fn gz_read<P: AsRef<path::Path>>(file:P) -> PipeReader {
+pub fn gz_read<P: AsRef<path::Path>>(file: P) -> PipeReader {
     let child = process::Command::new(gzcat())
-        .arg("-d")
-        .arg(file.as_ref().as_os_str())
-        .stdout(process::Stdio::piped())
-        .spawn()
-        .unwrap();
+                    .arg("-d")
+                    .arg(file.as_ref().as_os_str())
+                    .stdout(process::Stdio::piped())
+                    .spawn()
+                    .unwrap();
     PipeReader { child: child }
 }
 
-pub fn zpipe_read<P: AsRef<path::Path>>(file:P) -> PipeReader {
+pub fn zpipe_read<P: AsRef<path::Path>>(file: P) -> PipeReader {
     let child = process::Command::new("./zpipe.sh")
-        .arg(file.as_ref().as_os_str())
-        .stdout(process::Stdio::piped())
-        .spawn()
-        .unwrap();
+                    .arg(file.as_ref().as_os_str())
+                    .stdout(process::Stdio::piped())
+                    .spawn()
+                    .unwrap();
     PipeReader { child: child }
 }

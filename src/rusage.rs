@@ -2,7 +2,7 @@ extern crate time;
 extern crate libc;
 
 use self::libc::{rusage, RUSAGE_SELF, getrusage};
-use ::std::time::Duration;
+use std::time::Duration;
 
 quick_error! {
     #[derive(Debug)]
