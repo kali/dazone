@@ -1,4 +1,4 @@
-extern crate dx16;
+extern crate dazone;
 extern crate glob;
 extern crate simple_parallel;
 extern crate num_cpus;
@@ -23,9 +23,9 @@ use flate2::{Compression, FlateWriteExt};
 
 use rustc_serialize::{Encodable, Decodable};
 
-use dx16::Dx16Result;
-use dx16::data;
-use dx16::data::cap::Capitanable;
+use dazone::Dx16Result;
+use dazone::data;
+use dazone::data::cap::Capitanable;
 
 use pbr::ProgressBar;
 
@@ -61,8 +61,8 @@ fn main() {
 fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
     where T: Decodable + Encodable + Capitanable
 {
-    let source_root = dx16::files::data_dir_for("text-deflate", set, table);
-    let target_root = dx16::files::data_dir_for(dst, set, table);
+    let source_root = dazone::files::data_dir_for("text-deflate", set, table);
+    let target_root = dazone::files::data_dir_for(dst, set, table);
     let _ = fs::remove_dir_all(target_root.clone());
     try!(fs::create_dir_all(target_root.clone()));
     let glob = source_root.clone() + "/*.deflate";

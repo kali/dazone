@@ -1,5 +1,5 @@
 #[macro_use]
-extern crate dx16;
+extern crate dazone;
 extern crate capnp;
 extern crate capdata as cap;
 #[macro_use]
@@ -10,9 +10,9 @@ extern crate abomonation;
 extern crate timely;
 extern crate libc;
 
-use dx16::Dx16Result;
-use dx16::crunch::*;
-use dx16::short_bytes_array::*;
+use dazone::Dx16Result;
+use dazone::crunch::*;
+use dazone::short_bytes_array::*;
 
 use timely::dataflow::*;
 use timely::dataflow::operators::*;
@@ -59,7 +59,7 @@ fn main() {
     let t1 = ::time::get_time();
 
     if matches.is_present("MEMORY") {
-        ::dx16::rusage::start_monitor(::std::time::Duration::from_secs(10));
+        ::dazone::rusage::start_monitor(::std::time::Duration::from_secs(10));
     }
 
     let length: usize = matches.value_of("LENGTH").unwrap_or("8").parse().unwrap();
@@ -73,8 +73,8 @@ fn main() {
     }
     let t2 = ::time::get_time();
 
-    let usage = ::dx16::rusage::get_rusage();
-    let vmsize = ::dx16::rusage::get_memory_usage().unwrap().virtual_size;
+    let usage = ::dazone::rusage::get_rusage();
+    let vmsize = ::dazone::rusage::get_memory_usage().unwrap().virtual_size;
     println!("set: {:6} chunks: {:4} length: {:2} strat: {:6} buckets: {:4} workers: {:4} \
               rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:5}",
              &*runner.set,
@@ -106,7 +106,8 @@ struct Runner {
 
 impl Runner {
     fn run<K>(self)
-        where K:ShortBytesArray {
+        where K: ShortBytesArray
+    {
         if self.strategy == "timely" {
             self.run_timely::<K>();
         } else {
@@ -114,14 +115,15 @@ impl Runner {
         }
     }
 
-    fn sharded_input<'a, K>(&self, index:usize, peers:usize) -> BI<'a, BI<'a, (K,f32)>>
-        where K:ShortBytesArray {
+    fn sharded_input<'a, K>(&self, index: usize, peers: usize) -> BI<'a, BI<'a, (K, f32)>>
+        where K: ShortBytesArray
+    {
         match &*self.input {
             "cap" | "cap-gz" => {
                 Box::new(if &*self.input == "cap-gz" {
-                             dx16::files::cap::bibi_gz(&*self.set, "uservisits")
+                             dazone::files::cap::bibi_gz(&*self.set, "uservisits")
                          } else {
-                             dx16::files::cap::bibi(&*self.set, "uservisits")
+                             dazone::files::cap::bibi(&*self.set, "uservisits")
                          }
                          .take(self.chunks)
                          .enumerate()
@@ -144,14 +146,14 @@ impl Runner {
             }
             "rmp" | "csv" => {
                     Box::new(if &* self.input == "csv" {
-                        dx16::files::csv::bibi(&*self.set, "uservisits")
+                        dazone::files::csv::bibi(&*self.set, "uservisits")
                     } else {
-                        dx16::files::rmp::bibi_gz(&*self.set, "uservisits")
+                        dazone::files::rmp::bibi_gz(&*self.set, "uservisits")
                     }.take(self.chunks)
                              .enumerate()
                              .filter_map(move |(i,f)| if i % peers == index { Some(f) } else { None })
                              .map(move |chunk| -> BI<(K, f32)> {
-                                 Box::new(chunk.map(move |reader: Dx16Result<::dx16::data::pod::UserVisits>| {
+                                 Box::new(chunk.map(move |reader: Dx16Result<::dazone::data::pod::UserVisits>| {
                                      let visit = reader.unwrap();
                                      (K::prefix(&*visit.source_ip), visit.ad_revenue)
                                  }))
@@ -162,12 +164,13 @@ impl Runner {
     }
 
     fn run_standalone<K>(&self)
-        where K:ShortBytesArray {
+        where K: ShortBytesArray
+    {
         let r = |a: &f32, b: &f32| a + b;
         let bibi = self.sharded_input::<K>(0, 1);
         let groups = match &*self.strategy {
             "hash" => {
-                let mut aggregator = ::dx16::crunch::aggregators::HashMapAggregator::new(&r);
+                let mut aggregator = ::dazone::crunch::aggregators::HashMapAggregator::new(&r);
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
                     .with_progress(self.progress)
                     .with_workers(self.workers)
@@ -177,7 +180,7 @@ impl Runner {
             }
             "hashes" => {
                 let mut aggregator =
-                    ::dx16::crunch::aggregators::MultiHashMapAggregator::new(&r, self.buckets);
+                    ::dazone::crunch::aggregators::MultiHashMapAggregator::new(&r, self.buckets);
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
                     .with_progress(self.progress)
                     .with_workers(self.workers)
@@ -187,7 +190,7 @@ impl Runner {
             }
             "tries" => {
                 let mut aggregator =
-                    ::dx16::crunch::aggregators::MultiTrieAggregator::new(&r, self.buckets);
+                    ::dazone::crunch::aggregators::MultiTrieAggregator::new(&r, self.buckets);
                 MapOp::new_map_reduce(|(a, b): (K, f32)| Emit::One(a.to_vec(), b))
                     .with_progress(self.progress)
                     .with_workers(self.workers)
@@ -201,7 +204,8 @@ impl Runner {
     }
 
     fn run_timely<K>(self)
-        where K:ShortBytesArray {
+        where K: ShortBytesArray
+    {
 
         fn gethostname() -> String {
             let host: String = unsafe {
@@ -248,7 +252,7 @@ impl Runner {
 
                 let group_count =
                         uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
-                            ::dx16::hash(&(x.0)) as u64
+                            ::dazone::hash(&(x.0)) as u64
                         }),
                         "groupby-map",
                         vec![],
@@ -256,7 +260,7 @@ impl Runner {
                             while let Some((time, data)) = input.next() {
                                 notif.notify_at(time);
                                 for (k, v) in data.drain(..) {
-                                    dx16::crunch::aggregators::update_hashmap(&mut hashmap,
+                                    dazone::crunch::aggregators::update_hashmap(&mut hashmap,
                                                                       &|a, b| {
                                                                           a + b
                                                                       },

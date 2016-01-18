@@ -50,4 +50,3 @@ short_bytes_array!( K9 9 );
 short_bytes_array!( K10 10 );
 short_bytes_array!( K11 11 );
 short_bytes_array!( K12 12 );
-
