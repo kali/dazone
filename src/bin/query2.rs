@@ -1,5 +1,4 @@
-#![feature(reflect_marker)]
-
+#[macro_use]
 extern crate dx16;
 extern crate capnp;
 extern crate capdata as cap;
@@ -13,6 +12,7 @@ extern crate libc;
 
 use dx16::Dx16Result;
 use dx16::crunch::*;
+use dx16::short_bytes_array::*;
 
 use timely::dataflow::*;
 use timely::dataflow::operators::*;
@@ -21,57 +21,8 @@ use timely::dataflow::channels::pact::Exchange;
 use capnp::serialize::OwnedSegments;
 use capnp::message::Reader;
 
-use std::hash::{Hash, Hasher};
+use std::hash::Hasher;
 use std::collections::HashMap;
-
-use abomonation::Abomonation;
-
-use std::fmt::Debug;
-
-
-trait FixedBytesArray {
-    fn prefix(s: &str) -> Self;
-    fn to_vec(&self) -> Vec<u8>;
-}
-
-macro_rules! fixed_bytes_array {
-    ( $name:ident $size:expr ) => {
-        #[derive(Copy,Clone,Debug,PartialEq,Eq)]
-        pub struct $name([u8;$size]);
-
-        impl FixedBytesArray for $name {
-            fn prefix(s:&str) -> $name {
-                let mut buf = [b' ';$size];
-                {
-                    use std::io::Write;
-                    let mut slice:&mut [u8] = &mut buf;
-                    let bytes = s.as_bytes();
-                    let len = ::std::cmp::min(bytes.len(), $size);
-                    slice.write_all(&bytes[0..len]).unwrap();
-                }
-                $name(buf)
-            }
-
-            fn to_vec(&self) -> Vec<u8> {
-                self.0.to_vec()
-            }
-        }
-
-        impl Abomonation for $name { }
-
-        impl Hash for $name {
-            fn hash<H>(&self, state: &mut H) where H: Hasher {
-                self.0.hash(state)
-            }
-        }
-    }
-}
-
-fixed_bytes_array!( K8 8 );
-fixed_bytes_array!( K9 9 );
-fixed_bytes_array!( K10 10 );
-fixed_bytes_array!( K11 11 );
-fixed_bytes_array!( K12 12 );
 
 fn main() {
     let app = clap_app!( query2 =>
@@ -155,7 +106,7 @@ struct Runner {
 
 impl Runner {
     fn run<K>(self)
-        where K:FixedBytesArray+Abomonation+Send+Clone+::std::marker::Reflect+::std::hash::Hash+Eq+'static+Debug {
+        where K:ShortBytesArray {
         if self.strategy == "timely" {
             self.run_timely::<K>();
         } else {
@@ -164,7 +115,7 @@ impl Runner {
     }
 
     fn sharded_input<'a, K>(&self, index:usize, peers:usize) -> BI<'a, BI<'a, (K,f32)>>
-        where K:FixedBytesArray+Abomonation+Send+Clone+::std::marker::Reflect+::std::hash::Hash+Eq+'static+Debug {
+        where K:ShortBytesArray {
         match &*self.input {
             "cap" | "cap-gz" => {
                 Box::new(if &*self.input == "cap-gz" {
@@ -211,7 +162,7 @@ impl Runner {
     }
 
     fn run_standalone<K>(&self)
-        where K:FixedBytesArray+Abomonation+Send+Clone+::std::marker::Reflect+::std::hash::Hash+Eq+'static+Debug {
+        where K:ShortBytesArray {
         let r = |a: &f32, b: &f32| a + b;
         let bibi = self.sharded_input::<K>(0, 1);
         let groups = match &*self.strategy {
@@ -250,7 +201,7 @@ impl Runner {
     }
 
     fn run_timely<K>(self)
-        where K:FixedBytesArray+Abomonation+Send+Clone+::std::marker::Reflect+::std::hash::Hash+Eq+'static+Debug {
+        where K:ShortBytesArray {
 
         fn gethostname() -> String {
             let host: String = unsafe {

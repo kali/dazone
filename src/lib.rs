@@ -1,3 +1,4 @@
+#![feature(reflect_marker)]
 #![feature(iter_arith)]
 
 #[macro_use]
@@ -11,6 +12,8 @@ pub mod data;
 pub mod files;
 pub mod crunch;
 pub mod rusage;
+
+pub mod short_bytes_array;
 
 pub use errors::*;
 
