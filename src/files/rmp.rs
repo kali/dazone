@@ -1,12 +1,15 @@
 extern crate rmp;
 extern crate rmp_serialize;
 extern crate rustc_serialize;
+extern crate flate2;
 
 use std::marker::PhantomData;
-use std::io;
+use std::{fs, io};
 
 use self::rustc_serialize::Decodable;
 use self::rmp_serialize::decode::Decoder;
+
+use self::flate2::FlateReadExt;
 
 use crunch::BI;
 use Dx16Result;
@@ -55,7 +58,9 @@ pub fn bibi_gz<'a, 'b, T>(set: &str, table: &str) -> BI<'a, BI<'b, Dx16Result<T>
 {
     Box::new(super::files_for_format(set, table, "rmp-gz")
                  .into_iter()
-                 .map(|f| -> BI<Dx16Result<T>> { Box::new(RMPReader::new(super::gz_read(f))) }))
+                 .map(|f| -> BI<Dx16Result<T>> {
+                     Box::new(RMPReader::new(fs::File::open(f).unwrap().gz_decode().unwrap()))
+                 }))
 }
 
 pub struct RankingRMPReader<R: io::Read> {

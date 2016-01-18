@@ -1,8 +1,7 @@
 extern crate flate2;
 extern crate glob;
 
-use std::{path, process};
-use std::io;
+use std::path;
 
 pub mod cap;
 pub mod rmp;
@@ -21,47 +20,4 @@ pub fn files_for_format(set: &str, table: &str, format: &str) -> Vec<path::PathB
                                           .collect();
     vec.sort();
     vec
-}
-
-#[cfg(target_os="macos")]
-fn gzcat() -> &'static str {
-    "gzcat"
-}
-
-#[cfg(not(target_os="macos"))]
-fn gzcat() -> &'static str {
-    "zcat"
-}
-
-pub struct PipeReader {
-    child: process::Child,
-}
-
-impl io::Read for PipeReader {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        let res = self.child.stdout.as_mut().unwrap().read(buf);
-        if let Ok(0) = res {
-            try!(self.child.wait());
-        }
-        res
-    }
-}
-
-pub fn gz_read<P: AsRef<path::Path>>(file: P) -> PipeReader {
-    let child = process::Command::new(gzcat())
-                    .arg("-d")
-                    .arg(file.as_ref().as_os_str())
-                    .stdout(process::Stdio::piped())
-                    .spawn()
-                    .unwrap();
-    PipeReader { child: child }
-}
-
-pub fn zpipe_read<P: AsRef<path::Path>>(file: P) -> PipeReader {
-    let child = process::Command::new("./zpipe.sh")
-                    .arg(file.as_ref().as_os_str())
-                    .stdout(process::Stdio::piped())
-                    .spawn()
-                    .unwrap();
-    PipeReader { child: child }
 }

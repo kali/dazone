@@ -70,6 +70,6 @@ pub fn bibi_gz_fork<'a, 'b>(set: &str,
     Box::new(super::files_for_format(set, table, "cap-gz")
                  .into_iter()
                  .map(|f| -> BI<Dx16Result<Reader<OwnedSegments>>> {
-                     Box::new(CapReader::new(super::gz_read(f)))
+                     Box::new(CapReader::new(fs::File::open(f).unwrap().gz_decode().unwrap()))
                  }))
 }

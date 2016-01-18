@@ -7,6 +7,9 @@ use self::rustc_serialize::Decodable;
 
 use crunch::BI;
 use Dx16Result;
+use std::fs::File;
+
+use super::flate2::FlateReadExt;
 
 pub struct CSVReader<R, T>
     where T: Send + Decodable + 'static,
@@ -49,5 +52,7 @@ pub fn bibi<'a, 'b, T>(set: &str, table: &str) -> BI<'a, BI<'b, Dx16Result<T>>>
                                         .map(|p| p.unwrap().to_owned())
                                         .collect();
     Box::new(files.into_iter()
-                  .map(|f| -> BI<Dx16Result<T>> { Box::new(CSVReader::new(super::zpipe_read(f))) }))
+                  .map(|f| -> BI<Dx16Result<T>> {
+                      Box::new(CSVReader::new(File::open(f).unwrap().deflate_decode()))
+                  }))
 }
