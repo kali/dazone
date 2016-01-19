@@ -1,14 +1,10 @@
-extern crate simple_parallel;
-extern crate num_cpus;
-extern crate pbr;
-
 use std::collections::HashMap;
 use std::sync::Mutex;
 
 use std::hash::Hash;
 
-use self::simple_parallel::pool::Pool;
-use self::pbr::ProgressBar;
+use simple_parallel::pool::Pool;
+use pbr::ProgressBar;
 
 pub mod aggregators;
 
@@ -108,7 +104,7 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
             mapper: map,
             _phantom: ::std::marker::PhantomData,
             _phantom_2: ::std::marker::PhantomData,
-            workers: num_cpus::get() * 2,
+            workers: ::num_cpus::get() * 2,
             progressbar: false,
         }
     }
@@ -204,6 +200,6 @@ pub fn par_foreach<A, F>(chunks: BI<BI<A>>, func: &F)
     let each = |it: BI<A>| -> () {
         it.map(|e| mapper(e)).count();
     };
-    let mut pool = Pool::new(1 + num_cpus::get());
+    let mut pool = Pool::new(1 + ::num_cpus::get());
     let _: Vec<()> = unsafe { pool.map(chunks, &each).collect() };
 }

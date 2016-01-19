@@ -1,8 +1,5 @@
-extern crate flate2;
-extern crate glob;
-
 use snappy_framed::read::{CrcMode, SnappyFramedDecoder};
-use files::flate2::FlateReadExt;
+use flate2::FlateReadExt;
 
 use rustc_serialize::Decodable;
 
@@ -30,7 +27,7 @@ pub fn files_for_format(set: &str, table: &str, format: &str) -> Vec<path::PathB
         format
     };
     let glob = source_root.clone() + "/*." + ext;
-    let mut vec: Vec<path::PathBuf> = glob::glob(&glob)
+    let mut vec: Vec<path::PathBuf> = ::glob::glob(&glob)
         .unwrap()
         .map(|p| p.unwrap().to_owned())
         .collect();

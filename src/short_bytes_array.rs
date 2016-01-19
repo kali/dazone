@@ -1,6 +1,4 @@
-
-extern crate abomonation;
-use self::abomonation::Abomonation;
+use abomonation::Abomonation;
 
 use std::marker::Reflect;
 use std::fmt::Debug;

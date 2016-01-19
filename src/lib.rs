@@ -1,21 +1,30 @@
 #![feature(reflect_marker)]
 #![feature(iter_arith)]
 
+extern crate abomonation;
+extern crate capdata;
 extern crate capnp;
 extern crate csv;
+extern crate flate2;
+extern crate glob;
+extern crate libc;
+extern crate num_cpus;
+extern crate pbr;
 #[macro_use]
 extern crate quick_error;
-extern crate rustc_serialize;
-extern crate snappy_framed;
-
 extern crate radix_trie;
+extern crate rmp;
+extern crate rmp_serialize;
+extern crate rustc_serialize;
+extern crate simple_parallel;
+extern crate snappy_framed;
+extern crate time;
 
 pub mod errors;
 pub mod data;
 pub mod files;
 pub mod crunch;
 pub mod rusage;
-
 pub mod short_bytes_array;
 
 pub use errors::*;

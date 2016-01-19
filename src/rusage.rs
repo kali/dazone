@@ -1,7 +1,4 @@
-extern crate time;
-extern crate libc;
-
-use self::libc::{rusage, RUSAGE_SELF, getrusage};
+use libc::{getrusage, RUSAGE_SELF, rusage, timeval};
 use std::time::Duration;
 
 quick_error! {
@@ -22,8 +19,7 @@ pub struct MemoryUsage {
 
 #[cfg(target_os="macos")]
 mod darwin {
-    use std::mem::size_of;
-    use super::libc::*;
+    use libc::*;
     #[repr(C)]
     pub struct BasicTaskInfo {
         pub virtual_size: u64,
@@ -55,33 +51,23 @@ mod darwin {
         }
     }
     mod ffi {
-        use super::super::libc::*;
-        use rusage::darwin::BasicTaskInfo;
+        use libc::*;
         extern "C" {
             pub fn mach_task_self() -> c_uint;
             pub fn task_info(task: c_uint,
                              flavor: c_int,
-                             task_info: *mut BasicTaskInfo,
+                             task_info: *mut super::BasicTaskInfo,
                              count: *mut c_uint)
                              -> c_uint;
         }
-        // const VM_REGION_TOP_INFO: c_int = 12;
-        // pub fn mach_vm_region(task: c_uint,
-        // address: *mut uintptr_t,
-        // size: *mut u64,
-        // flavor: c_int,
-        // info: *const c_int,
-        // info_count: *mut c_uint,
-        // object_name: *const c_uint)
-        // -> c_int;
-        //
     }
     pub fn task_self() -> c_uint {
         unsafe { ffi::mach_task_self() }
     }
     pub fn task_info() -> BasicTaskInfo {
         let mut info = BasicTaskInfo::empty();
-        let mut count: c_uint = (size_of::<BasicTaskInfo>() / size_of::<c_uint>()) as c_uint;
+        let mut count: c_uint =
+            (::std::mem::size_of::<BasicTaskInfo>() / ::std::mem::size_of::<c_uint>()) as c_uint;
         unsafe {
             ffi::task_info(task_self(), 20, &mut info, &mut count);
         }
@@ -123,7 +109,7 @@ pub fn get_rusage() -> rusage {
         ru_minflt: 0,
         ru_oublock: 0,
         ru_nivcsw: 0,
-        ru_stime: libc::timeval {
+        ru_stime: timeval {
             tv_sec: 0,
             tv_usec: 0,
         },
@@ -132,7 +118,7 @@ pub fn get_rusage() -> rusage {
         ru_majflt: 0,
         ru_msgrcv: 0,
         ru_msgsnd: 0,
-        ru_utime: libc::timeval {
+        ru_utime: timeval {
             tv_sec: 0,
             tv_usec: 0,
         },

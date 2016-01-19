@@ -1,9 +1,7 @@
-extern crate csv;
-extern crate rustc_serialize;
-
 use std::marker::PhantomData;
-use std::{io};
-use self::rustc_serialize::Decodable;
+use std::io;
+use rustc_serialize::Decodable;
+use csv;
 
 pub struct CSVReader<R, T>
     where T: Send + Decodable + 'static,

@@ -1,12 +1,8 @@
-extern crate rmp;
-extern crate rmp_serialize;
-extern crate rustc_serialize;
-
 use std::marker::PhantomData;
 use std::io;
 
-use self::rustc_serialize::Decodable;
-use self::rmp_serialize::decode::Decoder;
+use rustc_serialize::Decodable;
+use rmp_serialize::decode::Decoder;
 
 use Dx16Result;
 use Dx16Error;
@@ -38,8 +34,8 @@ impl<R, T> Iterator for RMPReader<R, T>
     type Item = T;
 
     fn next(&mut self) -> Option<T> {
-        use self::rmp_serialize::decode::Error::InvalidMarkerRead;
-        use self::rmp::decode::ReadError;
+        use rmp_serialize::decode::Error::InvalidMarkerRead;
+        use rmp::decode::ReadError;
         let res: Result<T, _> = Decodable::decode(&mut self.stream);
         match res {
             Err(InvalidMarkerRead(ReadError::UnexpectedEOF)) => None,
@@ -66,9 +62,9 @@ impl<R: io::Read> Iterator for RankingRMPReader<R> {
     type Item = Dx16Result<u32>;
 
     fn next(&mut self) -> Option<Dx16Result<u32>> {
-        use self::rmp::decode::*;
+        use rmp::decode::*;
         let _marker = match read_marker(&mut self.stream) {
-            Err(rmp::decode::MarkerReadError::UnexpectedEOF) => return None,
+            Err(::rmp::decode::MarkerReadError::UnexpectedEOF) => return None,
             Err(error) => panic!(error),
             Ok(mark) => mark,
         };
