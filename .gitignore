@@ -3,3 +3,4 @@ Cargo.lock
 zpipe
 data
 ignored
+*.bk
