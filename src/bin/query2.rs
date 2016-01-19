@@ -10,7 +10,6 @@ extern crate abomonation;
 extern crate timely;
 extern crate libc;
 
-use dazone::Dx16Result;
 use dazone::crunch::*;
 use dazone::short_bytes_array::*;
 
@@ -118,13 +117,8 @@ impl Runner {
     fn sharded_input<'a, K>(&self, index: usize, peers: usize) -> BI<'a, BI<'a, (K, f32)>>
         where K: ShortBytesArray
     {
-        match &*self.input {
-            "cap" | "cap-gz" => {
-                Box::new(if &*self.input == "cap-gz" {
-                             dazone::files::cap::bibi_gz(&*self.set, "uservisits")
-                         } else {
-                             dazone::files::cap::bibi(&*self.set, "uservisits")
-                         }
+        if self.input.starts_with("cap") {
+            Box::new(dazone::files::bibi_cap(&*self.set, "uservisits", &*self.input)
                          .take(self.chunks)
                          .enumerate()
                          .filter_map(move |(i, f)| {
@@ -135,31 +129,29 @@ impl Runner {
                              }
                          })
                          .map(move |chunk| -> BI<(K, f32)> {
-                             Box::new(chunk.map(move |reader: Dx16Result<Reader<OwnedSegments>>| {
-                                 let reader = reader.unwrap();
+                             Box::new(chunk.map(move |reader: Reader<OwnedSegments>| {
                                  let visit: cap::user_visits::Reader = reader.get_root()
                                                                              .unwrap();
                                  (K::prefix(visit.get_source_i_p().unwrap()),
                                   visit.get_ad_revenue())
                              }))
                          }))
-            }
-            "rmp" | "csv" => {
-                    Box::new(if &* self.input == "csv" {
-                        dazone::files::csv::bibi(&*self.set, "uservisits")
-                    } else {
-                        dazone::files::rmp::bibi_gz(&*self.set, "uservisits")
-                    }.take(self.chunks)
-                             .enumerate()
-                             .filter_map(move |(i,f)| if i % peers == index { Some(f) } else { None })
-                             .map(move |chunk| -> BI<(K, f32)> {
-                                 Box::new(chunk.map(move |reader: Dx16Result<::dazone::data::pod::UserVisits>| {
-                                     let visit = reader.unwrap();
-                                     (K::prefix(&*visit.source_ip), visit.ad_revenue)
-                                 }))
+        } else {
+            Box::new(dazone::files::bibi_pod(&*self.set, "uservisits", &*self.input)
+                         .take(self.chunks)
+                         .enumerate()
+                         .filter_map(move |(i, f)| {
+                             if i % peers == index {
+                                 Some(f)
+                             } else {
+                                 None
+                             }
+                         })
+                         .map(move |chunk| -> BI<(K, f32)> {
+                             Box::new(chunk.map(move |visit: ::dazone::data::pod::UserVisits| {
+                                 (K::prefix(&*visit.source_ip), visit.ad_revenue)
                              }))
-                }
-            any => panic!("unknown input format {}", any),
+                         }))
         }
     }
 
@@ -246,58 +238,68 @@ impl Runner {
             let bibi = self.sharded_input::<K>(index, peers);
             println!("worker:{}/{} start", index, peers);
 
-            root.scoped::<u64,_,_>(move |builder| {
+            root.scoped::<u64, _, _>(move |builder| {
 
                 let uservisits = bibi.flat_map(|f| f).to_stream(builder);
 
                 let group_count =
-                        uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
-                            ::dazone::hash(&(x.0)) as u64
-                        }),
-                        "groupby-map",
-                        vec![],
-                        move |input, output, notif| {
-                            while let Some((time, data)) = input.next() {
-                                notif.notify_at(time);
-                                for (k, v) in data.drain(..) {
-                                    dazone::crunch::aggregators::update_hashmap(&mut hashmap,
-                                                                      &|a, b| {
-                                                                          a + b
-                                                                      },
-                                                                      k,
-                                                                      v);
-                                }
-                            }
-                            while let Some((iter, _)) = notif.next() {
-                                if hashmap.len() > 0 {
-                                    println!("worker {} map done, contributing ({})", index, hashmap.len());
-                                    output.session(&iter).give(hashmap.len());
-                                    hashmap.clear();
-                                }
-                            }
-                        });
+                uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
+                    ::dazone::hash(&(x.0)) as u64
+                }),
+                "groupby-map",
+                vec![],
+                move |input, output, notif| {
+                    while let Some((time, data)) = input.next() {
+                        notif.notify_at(time);
+                        for (k, v) in data.drain(..) {
+                            dazone::crunch::aggregators::update_hashmap(&mut hashmap,
+                                                                        &|a, b| {
+                                                                            a + b
+                                                                        },
+                                                                        k,
+                                                                        v);
+                        }
+                    }
+                    while let Some((iter, _)) = notif.next() {
+                        if hashmap.len() > 0 {
+                            println!("worker {} map done, contributing ({})", index, hashmap.len());
+                            output.session(&iter).give(hashmap.len());
+                            hashmap.clear();
+                        }
+                    }
+                });
 
-                let _count: Stream<_, ()> =
-                    group_count.unary_notify(Exchange::new(|_| 0u64),
-                                             "count",
-                                             vec![],
-                                             move |input, _, notify| {
-                                                 while let Some((time, data)) = input.next() {
-                                                    notify.notify_at(time);
-                                                    println!("worker {} receiving {} counts ", index, data.len());
-                                                     for x in data.drain(..) {
-                                                         sum += x;
-                                                     }
-                                                 }
-                                                 notify.for_each(|_, _| {
-                                                     if sum > 0 {
-                                                         println!("XXXX worker:{} groups:{} XXXX",
-                                                                  index,
-                                                                  sum);
-                                                         sum = 0;
-                                                     }
-                                                 })
-                                             });
+                let _count: Stream<_, ()> = group_count.unary_notify(Exchange::new(|_| 0u64),
+                                                                     "count",
+                                                                     vec![],
+                                                                     move |input, _, notify| {
+                                                                         while let Some((time,
+                                                                                         data)) =
+                                                                                   input.next() {
+                                                                             notify.notify_at(time);
+                                                                             println!("worker {} \
+                                                                                       receiving \
+                                                                                       {} counts ",
+                                                                                      index,
+                                                                                      data.len());
+                                                                             for x in
+                                                                                 data.drain(..) {
+                                                                                 sum += x;
+                                                                             }
+                                                                         }
+                                                                         notify.for_each(|_, _| {
+                                                                             if sum > 0 {
+                                                                                 println!("XXXX w\
+                                                                                           orker:\
+                                                                                           {} gro\
+                                                                                           ups:{} \
+                                                                                           XXXX",
+                                                                                          index,
+                                                                                          sum);
+                                                                                 sum = 0;
+                                                                             }
+                                                                         })
+                                                                     });
 
             });
 

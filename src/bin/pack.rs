@@ -9,11 +9,10 @@ extern crate rustc_serialize;
 extern crate flate2;
 extern crate pbr;
 extern crate clap;
+extern crate snappy_framed;
 
-use std::fs;
-use std::path;
+use std::{ fs, io, path };
 use std::io::BufWriter;
-use std::io::Read;
 
 use std::sync::Mutex;
 
@@ -22,6 +21,8 @@ use rmp_serialize::Encoder;
 use flate2::{Compression, FlateWriteExt};
 
 use rustc_serialize::{Encodable, Decodable};
+
+use snappy_framed::write::SnappyFramedEncoder;
 
 use dazone::Dx16Result;
 use dazone::data;
@@ -81,43 +82,44 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
     let pb = Mutex::new(ProgressBar::new(jobs.len()));
     let mut pool = simple_parallel::Pool::new(2 * num_cpus::get());
     let task = |job: (path::PathBuf, path::PathBuf)| -> Dx16Result<()> {
-        let mut cmd: ::std::process::Child = ::std::process::Command::new("./zpipe.sh")
-                                                 .arg(job.0.clone())
-                                                 .stdout(::std::process::Stdio::piped())
-                                                 .spawn()
-                                                 .unwrap();
-        {
-            let mut output = cmd.stdout.as_mut().unwrap();
-            let mut reader = csv::Reader::from_reader(output.by_ref()).has_headers(false);
-            match dst {
-                "rmp-gz" => {
-                    let mut writer = BufWriter::new(try!(fs::File::create(job.1)))
-                                         .gz_encode(Compression::Default);
-                    let mut coder = Encoder::new(&mut writer);
-                    for item in reader.decode() {
-                        let item: T = item.unwrap();
-                        item.encode(&mut coder).unwrap();
-                    }
+        let input = flate2::FlateReadExt::zlib_decode(fs::File::open(job.0).unwrap());
+        let mut reader = csv::Reader::from_reader(input).has_headers(false);
+        let tokens:Vec<&str> = dst.split("-").collect();
+
+        let file = fs::File::create(job.1).unwrap();
+        let mut compressed:Box<io::Write> = if tokens.len() == 1 {
+            Box::new(BufWriter::new(file))
+        } else if tokens[1] == "gz" {
+            Box::new(file.gz_encode(Compression::Default))
+        } else if tokens[1] == "snz" {
+            Box::new(SnappyFramedEncoder::new(file).unwrap())
+        } else {
+            panic!("unknown compression {}", tokens[1]);
+        };
+
+        match tokens[0] {
+            "cap" => {
+                for item in reader.decode() {
+                    let item: T = item.unwrap();
+                    item.write_to_cap(&mut compressed).unwrap();
                 }
-                "cap-gz" => {
-                    let mut writer = BufWriter::new(try!(fs::File::create(job.1)))
-                                         .gz_encode(Compression::Default);
-                    for item in reader.decode() {
-                        let item: T = item.unwrap();
-                        item.write_to_cap(&mut writer).unwrap();
-                    }
-                }
-                "cap" => {
-                    let mut writer = BufWriter::new(try!(fs::File::create(job.1)));
-                    for item in reader.decode() {
-                        let item: T = item.unwrap();
-                        item.write_to_cap(&mut writer).unwrap();
-                    }
-                }
-                any => panic!("unknown format {}", any),
             }
+            "rmp" => {
+                let mut coder = Encoder::new(&mut compressed);
+                for item in reader.decode() {
+                    let item: T = item.unwrap();
+                    item.encode(&mut coder).unwrap();
+                }
+            }
+            "csv" => {
+                let mut coder = ::csv::Writer::from_writer(compressed);
+                for item in reader.decode() {
+                    let item: T = item.unwrap();
+                    coder.encode(item).unwrap();
+                }
+            }
+            any => panic!("unknown format {}", any),
         }
-        cmd.wait().unwrap();
         pb.lock().unwrap().inc();
         Ok(())
     };

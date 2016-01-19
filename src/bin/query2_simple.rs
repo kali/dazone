@@ -1,14 +1,12 @@
 extern crate dazone;
 
-use dazone::Dx16Result;
 use dazone::crunch::*;
 use dazone::short_bytes_array::*;
 use dazone::data::pod::UserVisits;
 
 fn main() {
-    let input = dazone::files::csv::bibi::<UserVisits>("5nodes", "uservisits");
-    let map = |record: Dx16Result<UserVisits>| {
-        let visit = record.unwrap();
+    let input = dazone::files::bibi_pod::<UserVisits>("5nodes", "uservisits", "text-deflate");
+    let map = |visit: UserVisits| {
         Emit::One(K8::prefix(&*visit.source_ip), visit.ad_revenue)
     };
     let reduce = |a: &f32, b: &f32| a + b;

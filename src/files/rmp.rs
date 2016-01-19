@@ -1,17 +1,13 @@
 extern crate rmp;
 extern crate rmp_serialize;
 extern crate rustc_serialize;
-extern crate flate2;
 
 use std::marker::PhantomData;
-use std::{fs, io};
+use std::io;
 
 use self::rustc_serialize::Decodable;
 use self::rmp_serialize::decode::Decoder;
 
-use self::flate2::FlateReadExt;
-
-use crunch::BI;
 use Dx16Result;
 use Dx16Error;
 
@@ -39,28 +35,18 @@ impl<R, T> Iterator for RMPReader<R, T>
     where R: io::Read,
           T: Decodable + Send
 {
-    type Item = Dx16Result<T>;
+    type Item = T;
 
-    fn next(&mut self) -> Option<Dx16Result<T>> {
+    fn next(&mut self) -> Option<T> {
         use self::rmp_serialize::decode::Error::InvalidMarkerRead;
         use self::rmp::decode::ReadError;
         let res: Result<T, _> = Decodable::decode(&mut self.stream);
         match res {
             Err(InvalidMarkerRead(ReadError::UnexpectedEOF)) => None,
-            Err(a) => Some(Err(Dx16Error::from(a))),
-            Ok(r) => Some(Ok(r)),
+            Err(a) => panic!(a),
+            Ok(r) => Some(r),
         }
     }
-}
-
-pub fn bibi_gz<'a, 'b, T>(set: &str, table: &str) -> BI<'a, BI<'b, Dx16Result<T>>>
-    where T: Decodable + 'static + Send
-{
-    Box::new(super::files_for_format(set, table, "rmp-gz")
-                 .into_iter()
-                 .map(|f| -> BI<Dx16Result<T>> {
-                     Box::new(RMPReader::new(fs::File::open(f).unwrap().gz_decode().unwrap()))
-                 }))
 }
 
 pub struct RankingRMPReader<R: io::Read> {

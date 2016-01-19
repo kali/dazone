@@ -24,6 +24,8 @@ time = "0.1"
 radix_trie = "0.0.8"
 libc = "*"
 abomonation = "0.4.2"
+snappy_framed = "0.1.0"
+
 
 [dependencies.capdata]
 path = "capdata"

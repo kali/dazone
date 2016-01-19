@@ -1,9 +1,12 @@
 #![feature(reflect_marker)]
 #![feature(iter_arith)]
 
+extern crate capnp;
+extern crate csv;
 #[macro_use]
 extern crate quick_error;
 extern crate rustc_serialize;
+extern crate snappy_framed;
 
 extern crate radix_trie;
 
