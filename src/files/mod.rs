@@ -58,9 +58,9 @@ pub fn uncompressed_files_for_format<'a>(set: &str, table: &str, format: &str) -
 }
 
 pub fn bibi_pod<'a,'b,T>(set: &str, table: &str, format: &str) -> BI<'a,BI<'b,T>> where T:Decodable+Send+'static {
-    let tokens:Vec<String> = format.split(",").map(|x|x.to_owned()).collect();
+    let tokens:Vec<String> = format.split("-").map(|x|x.to_owned()).collect();
     Box::new(files_for_format(set, table, format).into_iter().map(move |f| {
-        let file = fs::File::create(f).unwrap();
+        let file = fs::File::open(f).unwrap();
 
         let decompressed:Box<io::Read+Send> = if tokens.len() == 1 {
             Box::new(BufReader::new(file))
