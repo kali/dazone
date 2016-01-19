@@ -53,6 +53,6 @@ pub fn bibi<'a, 'b, T>(set: &str, table: &str) -> BI<'a, BI<'b, Dx16Result<T>>>
                                         .collect();
     Box::new(files.into_iter()
                   .map(|f| -> BI<Dx16Result<T>> {
-                      Box::new(CSVReader::new(File::open(f).unwrap().deflate_decode()))
+                      Box::new(CSVReader::new(File::open(f).unwrap().zlib_decode()))
                   }))
 }

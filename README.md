@@ -12,22 +12,6 @@ https://capnproto.org/install.html . At the time I write this, it gives
 instructions for 0.5.3, and this version works. I have 0.6 on my mac, and
 it works too.
 
-### Building zpipe
-
-The deflate2 crate can be frustrating at times. It uses miniz and not the good
-old zlib, so sometimes, it just does not work.
-
-The "deflate" files from the original benchmarks are a good example of this.
-The zpipe.c is a pipe-able zipper/unzipper for deflate. It's part of zlib,
-and it helps when working directly with these files.
-
-Bottom line, you must build it: just run the following command at the top level
-of the project.
-
-```shell
-cc zpipe.c -O3 -o zpipe -lz
-```
-
 ### Downloading the data
 
 For the sake of simplicity, I will assume that all data will be at the same
@@ -71,6 +55,19 @@ convenient for debugging.
 Then comes the actual "table": query 2 uses only uservisits.
 
 Now, the downloaded files are the ones in text-deflate.
+
+By the way... they are called "-deflate". This can get a bit subtle, and is 
+actually a good way to waste a lot of time. They are actually three
+encapsulation formats in zlib and compatible implementation (like miniz). =gz=
+is the most sophisticated, with crc and various optional metadata headers.
+=zlib= has a very simple two-byte headers. And then there is the "raw" format,
+with no encapsulation at all.
+
+Rust wrappers in the flate2 crate supports these three formats, uses the
+"deflate" prefix for the raw format, and "zlib" for the two-byte header format.
+
+The files uses a =.deflate= suffix, but they are encoded with a zlib prefix...
+
 
 You'll need working S3 credentials and a setup s3cmd. The version from brew or
 apt worked for me. Run s3cmd --configure to provide your credentials, crypt
