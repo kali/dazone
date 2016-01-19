@@ -33,4 +33,3 @@ impl<R, T> Iterator for CSVReader<R, T>
         self.stream.decode().next().map(|it| it.unwrap())
     }
 }
-

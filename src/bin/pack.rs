@@ -10,7 +10,7 @@ extern crate pbr;
 extern crate clap;
 extern crate snappy_framed;
 
-use std::{ fs, io, path };
+use std::{fs, io, path};
 use std::io::BufWriter;
 
 use std::fmt::Debug;
@@ -64,14 +64,15 @@ fn main() {
 }
 
 fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
-    where T: Decodable + Encodable + Capitanable+ Debug
+    where T: Decodable + Encodable + Capitanable + Debug
 {
     let source_root = dazone::files::data_dir_for("text-deflate", set, table);
     let target_root = dazone::files::data_dir_for(dst, set, table);
     let _ = fs::remove_dir_all(target_root.clone());
     try!(fs::create_dir_all(target_root.clone()));
     let jobs: Dx16Result<Vec<(path::PathBuf, path::PathBuf)>> =
-        dazone::files::files_for_format(set, table, "text-deflate").iter()
+        dazone::files::files_for_format(set, table, "text-deflate")
+            .iter()
             .map(|entry| {
                 let entry: String = entry.to_str().unwrap().to_string();
                 let target = target_root.clone() +
@@ -88,10 +89,10 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
         let input = flate2::FlateReadExt::zlib_decode(fs::File::open(job.0).unwrap());
         let mut reader = csv::Reader::from_reader(input).has_headers(false);
 
-        let tokens:Vec<&str> = dst.split("-").collect();
+        let tokens: Vec<&str> = dst.split("-").collect();
 
         let file = fs::File::create(job.1).unwrap();
-        let mut compressed:Box<io::Write> = if tokens.len() == 1 {
+        let mut compressed: Box<io::Write> = if tokens.len() == 1 {
             Box::new(BufWriter::new(file))
         } else if tokens[1] == "gz" {
             Box::new(file.gz_encode(Compression::Default))
