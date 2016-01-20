@@ -63,11 +63,11 @@ fn main() {
 
     let length: usize = matches.value_of("LENGTH").unwrap_or("8").parse().unwrap();
     match length {
-        8 => runner.clone().run::<K8>(),
-        9 => runner.clone().run::<K9>(),
-        10 => runner.clone().run::<K10>(),
-        11 => runner.clone().run::<K11>(),
-        12 => runner.clone().run::<K12>(),
+        8 => runner.clone().run::<BYTES_8>(),
+        9 => runner.clone().run::<BYTES_9>(),
+        10 => runner.clone().run::<BYTES_10>(),
+        11 => runner.clone().run::<BYTES_11>(),
+        12 => runner.clone().run::<BYTES_12>(),
         _ => panic!("key length {} not implemented"),
     }
     let t2 = ::time::get_time();

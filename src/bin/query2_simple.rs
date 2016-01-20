@@ -7,7 +7,7 @@ use dazone::data::pod::UserVisits;
 
 fn main() {
     let input = bibi_pod("5nodes", "uservisits", "text-deflate");
-    let map = |visit: UserVisits| Emit::One(K8::prefix(&*visit.source_ip), visit.ad_revenue);
+    let map = |visit: UserVisits| Emit::One(BYTES_8::prefix(&*visit.source_ip), visit.ad_revenue);
     let reduce = |a: &f32, b: &f32| a + b;
     let mut aggregator = aggregators::MultiHashMapAggregator::new(&reduce, 256);
     MapOp::new_map_reduce(map)

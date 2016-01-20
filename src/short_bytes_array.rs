@@ -43,8 +43,8 @@ macro_rules! short_bytes_array {
     }
 }
 
-short_bytes_array!( K8 8 );
-short_bytes_array!( K9 9 );
-short_bytes_array!( K10 10 );
-short_bytes_array!( K11 11 );
-short_bytes_array!( K12 12 );
+short_bytes_array!( BYTES_8 8 );
+short_bytes_array!( BYTES_9 9 );
+short_bytes_array!( BYTES_10 10 );
+short_bytes_array!( BYTES_11 11 );
+short_bytes_array!( BYTES_12 12 );
