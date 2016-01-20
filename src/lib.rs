@@ -7,6 +7,7 @@ extern crate capdata;
 extern crate capnp;
 extern crate csv;
 extern crate flate2;
+extern crate fnv;
 extern crate glob;
 extern crate libc;
 extern crate num_cpus;

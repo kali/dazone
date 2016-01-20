@@ -7,6 +7,7 @@ use simple_parallel::pool::Pool;
 use pbr::ProgressBar;
 
 pub mod aggregators;
+pub mod fnv;
 
 pub type BI<'a, A> = Box<Iterator<Item = A> + Send + 'a>;
 
