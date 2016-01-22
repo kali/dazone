@@ -1,13 +1,16 @@
 extern crate dazone;
-extern crate simple_parallel;
-extern crate num_cpus;
+
+extern crate bincode;
+extern crate cbor;
+extern crate clap;
 extern crate csv;
+extern crate flate2;
+extern crate num_cpus;
+extern crate pbr;
 extern crate rmp;
 extern crate rmp_serialize;
 extern crate rustc_serialize;
-extern crate flate2;
-extern crate pbr;
-extern crate clap;
+extern crate simple_parallel;
 extern crate snappy_framed;
 
 use std::{fs, io, path};
@@ -16,8 +19,6 @@ use std::io::BufWriter;
 use std::fmt::Debug;
 
 use std::sync::Mutex;
-
-use rmp_serialize::Encoder;
 
 use flate2::{Compression, FlateWriteExt};
 
@@ -97,20 +98,30 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
         } else if tokens[1] == "gz" {
             Box::new(file.gz_encode(Compression::Default))
         } else if tokens[1] == "snz" {
-            Box::new(io::BufWriter::with_capacity(64*1024, SnappyFramedEncoder::new(file).unwrap()))
+            Box::new(io::BufWriter::with_capacity(64 * 1024,
+                                                  SnappyFramedEncoder::new(file).unwrap()))
         } else {
             panic!("unknown compression {}", tokens[1]);
         };
 
         match tokens[0] {
+            "bincode" => {
+                for item in reader.decode() {
+                    let item: T = item.unwrap();
+                    bincode::rustc_serialize::encode_into(&item,
+                                                          &mut compressed,
+                                                          bincode::SizeLimit::Infinite)
+                        .unwrap();
+                }
+            }
             "cap" => {
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     item.write_to_cap(&mut compressed).unwrap();
                 }
             }
-            "rmp" => {
-                let mut coder = Encoder::new(&mut compressed);
+            "cbor" => {
+                let mut coder = ::cbor::Encoder::from_writer(&mut compressed);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     item.encode(&mut coder).unwrap();
@@ -121,6 +132,13 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     coder.encode(item).unwrap();
+                }
+            }
+            "rmp" => {
+                let mut coder = ::rmp_serialize::Encoder::new(&mut compressed);
+                for item in reader.decode() {
+                    let item: T = item.unwrap();
+                    item.encode(&mut coder).unwrap();
                 }
             }
             any => panic!("unknown format {}", any),

@@ -3,8 +3,10 @@
 #![feature(iter_arith)]
 
 extern crate abomonation;
+extern crate bincode;
 extern crate capdata;
 extern crate capnp;
+extern crate cbor;
 extern crate csv;
 extern crate flate2;
 extern crate fnv;

@@ -26,6 +26,8 @@ libc = "*"
 abomonation = "0.4.2"
 snappy_framed = "0.1.0"
 fnv = "*"
+cbor = "*"
+bincode = "*"
 
 [dependencies.capdata]
 path = "capdata"

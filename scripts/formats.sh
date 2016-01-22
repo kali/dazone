@@ -1,10 +1,13 @@
 #!/bin/sh
 
-SET=5nodes
+SET=1node
 
-for format in csv text-deflate csv-snz \
-              rmp rmp-gz rmp-snz \
-              cap cap-gz cap-snz
+# csv text-deflate csv-snz \
+# rmp rmp-gz 
+# rmp-snz \
+#              cap cap-gz cap-snz
+
+for format in cap
 do
     echo
     echo "################# $format ###################"

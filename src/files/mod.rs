@@ -11,9 +11,11 @@ use std::io::BufReader;
 
 use crunch::BI;
 
+pub mod bincode;
 pub mod cap;
 pub mod rmp;
 pub mod csv;
+pub mod cbor;
 
 pub fn data_dir_for(state: &str, set: &str, table: &str) -> String {
     format!("data/{}/{}/{}", state, set, table)
@@ -67,6 +69,8 @@ where T: Decodable + Send + 'static
         let it: BI<T> = match &*tokens[0] {
             "csv" | "text" => Box::new(csv::CSVReader::new(f)),
             "rmp" => Box::new(rmp::RMPReader::new(f)),
+            "cbor" => Box::new(cbor::CborReader::new(f)),
+            "bincode" => Box::new(bincode::BincodeReader::new(f)),
             any => panic!("unknown format {}", any),
         };
         it
