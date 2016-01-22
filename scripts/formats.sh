@@ -2,26 +2,20 @@
 
 SET=1node
 
-# csv text-deflate csv-snz \
-# rmp rmp-gz 
-# rmp-snz \
-#              cap cap-gz cap-snz
 
-for format in cap
+for comp in "" gz snz
 do
-    echo
-    echo "################# $format ###################"
-    echo
-    if [ $format != 'text-deflate' ]
-    then
+    for enc in csv bincode cbor rmp cap
+    do
+        format=$enc-$comp
+        echo
+        echo "################# $format ###################"
+        echo
         ./target/release/pack -s $SET uservisits $format
-    fi
-    du -hs data/$format/$SET/uservisits
-    du -s data/$format/$SET/uservisits
-    /usr/local/bin/purge
-    ./target/release/query2 -s $SET -i $format
-    if [ $format != 'text-deflate' ]
-    then
+        du -hs data/$format/$SET/uservisits
+        du -s data/$format/$SET/uservisits
+        /usr/local/bin/purge
+        ./target/release/query2 -s $SET -i $format
         rm -rf data/$format/$SET/uservisits
-    fi
+    done
 done
