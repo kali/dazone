@@ -1,20 +1,29 @@
 #!/bin/sh
 
-SET=1node
+SET=5nodes
 
 
 for comp in "" gz snz
 do
     for enc in csv bincode cbor rmp cap
     do
-        format=$enc-$comp
+        if [ -n "comp " ]
+            format="$enc"
+        else
+            format="$enc-$comp"
+        fi
         echo
         echo "################# $format ###################"
         echo
         ./target/release/pack -s $SET uservisits $format
         du -hs data/$format/$SET/uservisits
         du -s data/$format/$SET/uservisits
-        /usr/local/bin/purge
+        if [ `uname` == Darwin ]
+        then
+            /usr/local/bin/purge
+        else
+            sync && echo 3 > /proc/sys/vm/drop_caches
+        fi
         ./target/release/query2 -s $SET -i $format
         rm -rf data/$format/$SET/uservisits
     done

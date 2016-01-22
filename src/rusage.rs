@@ -101,10 +101,11 @@ pub fn get_memory_usage() -> Result<ResourceUsage> {
     let mut proc_stat = String::new();
     let _ = try!(try!(File::open("/proc/self/stat")).read_to_string(&mut proc_stat));
     let mut tokens = proc_stat.split(" ");
+    let rusage = get_rusage();
     Ok(ResourceUsage {
         virtual_size: tokens.nth(22).unwrap().parse().unwrap_or(0),
         resident_size: 4 * 1024 * tokens.next().unwrap().parse().unwrap_or(0),
-        resident_size_max: 1024 * get_rusage().ru_maxrss as u64,
+        resident_size_max: 1024 * rusage.ru_maxrss as u64,
         user_time: rusage.ru_utime.tv_sec as f64 + rusage.ru_utime.tv_usec as f64 / 1_000_000f64,
         system_time: rusage.ru_stime.tv_sec as f64 + rusage.ru_stime.tv_usec as f64 / 1_000_000f64,
     })
