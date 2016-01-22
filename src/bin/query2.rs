@@ -12,6 +12,7 @@ extern crate libc;
 
 use dazone::crunch::*;
 use dazone::short_bytes_array::*;
+use dazone::rusage::*;
 
 use timely::dataflow::*;
 use timely::dataflow::operators::*;
@@ -23,6 +24,8 @@ use capnp::message::Reader;
 use std::hash::Hasher;
 use std::collections::HashMap;
 
+use std::sync::Arc;
+
 fn main() {
     let app = clap_app!( query2 =>
                          (@arg SET: -s --set +takes_value "(tiny, 1node, 5nodes")
@@ -31,13 +34,17 @@ fn main() {
                          (@arg KEY_LENGTH: -k --key-length +takes_value "(8, 9, 10, 11, 12)")
                          (@arg REDUCE: -r --reduce +takes_value "(hash, hashes, tries, timely)")
                          (@arg BUCKETS: -b --buckets +takes_value "reduce buckets (256)")
-                         (@arg PROGRESS: -p --progress "show progressbar")
-                         (@arg MEMORY: -m --memory "monitor memory usage")
+                         (@arg MONITOR: -m --monitor +takes_value "monitor resouce usage")
                          (@arg WORKERS: -w --workers +takes_value "worker threads (num_cpu*2)")
                          (@arg HOSTS: -h --hosts +takes_value "hosts, coma sep (for timely)")
                          (@arg ME: --me +takes_value "my position in hosts (starting at 0)")
                        );
     let matches = app.get_matches();
+
+    let monitor: Option<Arc<Monitor>> = matches.value_of("MONITOR").map(|f| {
+        Monitor::new(time::Duration::seconds(1),
+                     ::std::fs::File::create(f).unwrap())
+    });
 
     let runner = Runner {
         set: matches.value_of("SET").unwrap_or("5nodes").to_string(),
@@ -48,18 +55,14 @@ fn main() {
                         .map(|a| a.parse::<usize>().unwrap())
                         .unwrap_or(::num_cpus::get() * 2),
         buckets: matches.value_of("BUCKETS").unwrap_or("256").parse().unwrap(),
-        progress: matches.is_present("PROGRESS"),
         hosts: matches.value_of("HOSTS").map(|x| x.to_string()),
         me: matches.value_of("ME").map(|x| x.parse().unwrap()),
+        monitor: monitor,
     };
 
     println!("runner: {:?}", runner);
 
     let t1 = ::time::get_time();
-
-    if matches.is_present("MEMORY") {
-        ::dazone::rusage::start_monitor(::std::time::Duration::from_secs(10));
-    }
 
     let length: usize = matches.value_of("LENGTH").unwrap_or("8").parse().unwrap();
     match length {
@@ -98,9 +101,10 @@ struct Runner {
     strategy: String,
     workers: usize,
     buckets: usize,
-    progress: bool,
+    // progress: bool,
     hosts: Option<String>,
     me: Option<usize>,
+    monitor: Option<Arc<Monitor>>,
 }
 
 impl Runner {
@@ -164,7 +168,7 @@ impl Runner {
             "hash" => {
                 let mut aggregator = ::dazone::crunch::aggregators::HashMapAggregator::new(&r);
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
-                    .with_progress(self.progress)
+                    .with_monitor(self.monitor.clone())
                     .with_workers(self.workers)
                     .run(bibi, &mut aggregator);
                 aggregator.converge();
@@ -172,9 +176,9 @@ impl Runner {
             }
             "hashes" => {
                 let mut aggregator =
-                    ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hash_state(&r, self.buckets, dazone::crunch::fnv::FnvState);
+                        ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hash_state(&r, self.buckets, dazone::crunch::fnv::FnvState);
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
-                    .with_progress(self.progress)
+                    .with_monitor(self.monitor.clone())
                     .with_workers(self.workers)
                     .run(bibi, &mut aggregator);
                 aggregator.converge();
@@ -184,7 +188,7 @@ impl Runner {
                 let mut aggregator =
                     ::dazone::crunch::aggregators::MultiTrieAggregator::new(&r, self.buckets);
                 MapOp::new_map_reduce(|(a, b): (K, f32)| Emit::One(a.to_vec(), b))
-                    .with_progress(self.progress)
+                    .with_monitor(self.monitor.clone())
                     .with_workers(self.workers)
                     .run(bibi, &mut aggregator);
                 aggregator.converge();
@@ -240,68 +244,68 @@ impl Runner {
 
             root.scoped::<u64, _, _>(move |builder| {
 
-                let uservisits = bibi.flat_map(|f| f).to_stream(builder);
+                    let uservisits = bibi.flat_map(|f| f).to_stream(builder);
 
-                let group_count =
-                uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
-                    ::dazone::hash(&(x.0)) as u64
-                }),
-                "groupby-map",
-                vec![],
-                move |input, output, notif| {
-                    while let Some((time, data)) = input.next() {
-                        notif.notify_at(time);
-                        for (k, v) in data.drain(..) {
-                            dazone::crunch::aggregators::update_hashmap(&mut hashmap,
-                                                                        &|a, b| {
-                                                                            a + b
-                                                                        },
-                                                                        k,
-                                                                        v);
-                        }
-                    }
-                    while let Some((iter, _)) = notif.next() {
-                        if hashmap.len() > 0 {
-                            println!("worker {} map done, contributing ({})", index, hashmap.len());
-                            output.session(&iter).give(hashmap.len());
-                            hashmap.clear();
-                        }
-                    }
-                });
+                    let group_count =
+                        uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
+                            ::dazone::hash(&(x.0)) as u64
+                        }),
+                        "groupby-map",
+                        vec![],
+                        move |input, output, notif| {
+                            while let Some((time, data)) = input.next() {
+                                notif.notify_at(time);
+                                for (k, v) in data.drain(..) {
+                                    dazone::crunch::aggregators::update_hashmap(&mut hashmap,
+                                                                                &|a, b| {
+                                                                                    a + b
+                                                                                },
+                                                                                k,
+                                                                                v);
+                                }
+                            }
+                            while let Some((iter, _)) = notif.next() {
+                                if hashmap.len() > 0 {
+                                    println!("worker {} map done, contributing ({})", index, hashmap.len());
+                                    output.session(&iter).give(hashmap.len());
+                                    hashmap.clear();
+                                }
+                            }
+                        });
 
-                let _count: Stream<_, ()> = group_count.unary_notify(Exchange::new(|_| 0u64),
-                                                                     "count",
-                                                                     vec![],
-                                                                     move |input, _, notify| {
-                                                                         while let Some((time,
-                                                                                         data)) =
-                                                                                   input.next() {
-                                                                             notify.notify_at(time);
-                                                                             println!("worker {} \
+                    let _count: Stream<_, ()> = group_count.unary_notify(Exchange::new(|_| 0u64),
+                    "count",
+                    vec![],
+                    move |input, _, notify| {
+                        while let Some((time,
+                                        data)) =
+                            input.next() {
+                                notify.notify_at(time);
+                                println!("worker {} \
                                                                                        receiving \
                                                                                        {} counts ",
-                                                                                      index,
-                                                                                      data.len());
-                                                                             for x in
-                                                                                 data.drain(..) {
-                                                                                 sum += x;
-                                                                             }
-                                                                         }
-                                                                         notify.for_each(|_, _| {
-                                                                             if sum > 0 {
-                                                                                 println!("XXXX w\
+                                                                                       index,
+                                                                                       data.len());
+                                for x in
+                                    data.drain(..) {
+                                        sum += x;
+                                    }
+                            }
+                        notify.for_each(|_, _| {
+                            if sum > 0 {
+                                println!("XXXX w\
                                                                                            orker:\
                                                                                            {} gro\
                                                                                            ups:{} \
                                                                                            XXXX",
-                                                                                          index,
-                                                                                          sum);
-                                                                                 sum = 0;
-                                                                             }
-                                                                         })
-                                                                     });
+                                                                                           index,
+                                                                                           sum);
+                                sum = 0;
+                            }
+                        })
+                    });
 
-            });
+                });
 
             while root.step() {
             }

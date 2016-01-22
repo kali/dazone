@@ -1,10 +1,11 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::Arc;
 
 use std::hash::Hash;
 
 use simple_parallel::pool::Pool;
-use pbr::ProgressBar;
+
+use rusage::Monitor;
 
 pub mod aggregators;
 pub mod fnv;
@@ -60,7 +61,7 @@ pub struct MapOp<'a, M, A, K, V>
     _phantom: ::std::marker::PhantomData<A>,
     _phantom_2: ::std::marker::PhantomData<&'a usize>,
     workers: usize,
-    progressbar: bool,
+    monitor: Option<Arc<::rusage::Monitor>>
 }
 
 impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
@@ -73,13 +74,8 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
         where Agg: Aggregator<'a, R, K, V>,
               R: Sync + Fn(&V, &V) -> V + 'static
     {
-        let progressbar = self.progressbar;
         let mapper = &self.mapper;
-
-        let rawpb = ProgressBar::new(chunks.size_hint().1.unwrap_or(0));
-        // rawpb.format(" _🐌·🍀");
-        let pb = Mutex::new(rawpb);
-
+        let monitor = self.monitor.clone();
         {
             let each = |(i, it): (usize, BI<A>)| {
                 {
@@ -88,8 +84,8 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
                         inlet.push(e)
                     }
                 }
-                if progressbar {
-                    pb.lock().unwrap().inc();
+                if let Some(ref mon) = monitor {
+                    mon.add_progress(1)
                 }
             };
             let mut pool = Pool::new(self.workers);
@@ -106,7 +102,7 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
             _phantom: ::std::marker::PhantomData,
             _phantom_2: ::std::marker::PhantomData,
             workers: ::num_cpus::get() * 2,
-            progressbar: false,
+            monitor: None
         }
     }
 
@@ -114,8 +110,8 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
         MapOp { workers: w, ..self }
     }
 
-    pub fn with_progress(self, p: bool) -> MapOp<'a, M, A, K, V> {
-        MapOp { progressbar: p, ..self }
+    pub fn with_monitor(self, mon:Option<Arc<Monitor>>) -> MapOp<'a, M, A, K, V> {
+        MapOp { monitor:mon, ..self }
     }
 }
 

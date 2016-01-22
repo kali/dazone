@@ -1,20 +1,26 @@
+use std::io;
+use std::io::Write;
 use libc::{getrusage, RUSAGE_SELF, rusage, timeval};
 use std::time::Duration;
+use time;
+use std::sync;
 
 quick_error! {
     #[derive(Debug)]
-    pub enum MemoryUsageError {
+    pub enum ResourceUsageError {
         Io(err: ::std::io::Error) { from() }
     }
 }
 
-pub type Result<T> = ::std::result::Result<T, MemoryUsageError>;
+pub type Result<T> = ::std::result::Result<T, ResourceUsageError>;
 
 #[derive(Debug)]
-pub struct MemoryUsage {
+pub struct ResourceUsage {
     pub virtual_size: u64,
     pub resident_size: u64,
     pub resident_size_max: u64,
+    pub user_time: f64,
+    pub system_time: f64,
 }
 
 #[cfg(target_os="macos")]
@@ -76,26 +82,31 @@ mod darwin {
 }
 
 #[cfg(target_os="macos")]
-pub fn get_memory_usage() -> Result<MemoryUsage> {
+pub fn get_memory_usage() -> Result<ResourceUsage> {
     let info = darwin::task_info();
-    Ok(MemoryUsage {
+    let rusage = get_rusage();
+    Ok(ResourceUsage {
         virtual_size: info.virtual_size,
         resident_size: info.resident_size,
         resident_size_max: info.resident_size_max,
+        user_time: rusage.ru_utime.tv_sec as f64 + rusage.ru_utime.tv_usec as f64 / 1_000_000f64,
+        system_time: rusage.ru_stime.tv_sec as f64 + rusage.ru_stime.tv_usec as f64 / 1_000_000f64,
     })
 }
 
 #[cfg(target_os="linux")]
-pub fn get_memory_usage() -> Result<MemoryUsage> {
+pub fn get_memory_usage() -> Result<ResourceUsage> {
     use std::fs::File;
     use std::io::Read;
     let mut proc_stat = String::new();
     let _ = try!(try!(File::open("/proc/self/stat")).read_to_string(&mut proc_stat));
     let mut tokens = proc_stat.split(" ");
-    Ok(MemoryUsage {
+    Ok(ResourceUsage {
         virtual_size: tokens.nth(22).unwrap().parse().unwrap_or(0),
         resident_size: 4 * 1024 * tokens.next().unwrap().parse().unwrap_or(0),
         resident_size_max: 1024 * get_rusage().ru_maxrss as u64,
+        user_time: rusage.ru_utime.tv_sec as f64 + rusage.ru_utime.tv_usec as f64 / 1_000_000f64,
+        system_time: rusage.ru_stime.tv_sec as f64 + rusage.ru_stime.tv_usec as f64 / 1_000_000f64,
     })
 }
 
@@ -130,13 +141,48 @@ pub fn get_rusage() -> rusage {
     usage
 }
 
-pub fn start_monitor(interval: Duration) {
-    ::std::thread::spawn(move || {
-        loop {
-            dump_memory_stats();
-            ::std::thread::sleep(interval);
-        }
-    });
+#[derive(Debug,Default)]
+pub struct Monitor {
+    pub progress: sync::atomic::AtomicUsize,
+}
+
+impl Monitor {
+    pub fn new<W:Write+Send+'static>(interval:time::Duration, write:W) -> sync::Arc<Monitor> {
+        use std::sync::atomic::Ordering::Relaxed;
+        let monitor = sync::Arc::new(Monitor::default());
+        let monitor_to_go = monitor.clone();
+        let cpus = ::num_cpus::get();
+        ::std::thread::spawn(move || {
+            let mut buffed = io::BufWriter::new(write);
+            let started = time::get_time();
+            for step in 0.. {
+                let now = interval * step;
+                let usage = get_memory_usage().unwrap();
+                write!(buffed,
+                       "{:7.3} {:4} {:10} {:2} {:8.3} {:8.3}\n",
+                       now.num_milliseconds() as f32 / 1000f32,
+                       monitor_to_go.progress.load(Relaxed),
+                       usage.resident_size,
+                       cpus,
+                       usage.user_time,
+                       usage.system_time,
+                       )
+                    .unwrap();
+                buffed.flush().unwrap();
+                let delay = started + now + interval - time::get_time();
+                ::std::thread::sleep(Duration::from_millis(delay.num_milliseconds() as u64));
+            }
+        });
+        monitor
+    }
+
+    pub fn set_progress(&self, progress:usize) {
+        self.progress.store(progress, sync::atomic::Ordering::Relaxed);
+    }
+
+    pub fn add_progress(&self, progress:usize) {
+        self.progress.fetch_add(progress, sync::atomic::Ordering::Relaxed);
+    }
 }
 
 pub fn dump_memory_stats() {

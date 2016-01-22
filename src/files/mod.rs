@@ -28,9 +28,9 @@ pub fn files_for_format(set: &str, table: &str, format: &str) -> Vec<path::PathB
     };
     let glob = source_root.clone() + "/*." + ext;
     let mut vec: Vec<path::PathBuf> = ::glob::glob(&glob)
-                                          .unwrap()
-                                          .map(|p| p.unwrap().to_owned())
-                                          .collect();
+        .unwrap()
+        .map(|p| p.unwrap().to_owned())
+        .collect();
     vec.sort();
     vec
 }
@@ -38,8 +38,8 @@ pub fn files_for_format(set: &str, table: &str, format: &str) -> Vec<path::PathB
 pub fn uncompressed_files_for_format<'a>(set: &str,
                                          table: &str,
                                          format: &str)
-                                         -> BI<'a, Box<io::Read + Send>> {
-    let tokens: Vec<String> = format.split(",").map(|x| x.to_owned()).collect();
+-> BI<'a, Box<io::Read + Send>> {
+    let tokens: Vec<String> = format.split("-").map(|x| x.to_owned()).collect();
     Box::new(files_for_format(set, table, format).into_iter().map(move |f| {
         let file = fs::File::open(f).unwrap();
 
@@ -47,6 +47,8 @@ pub fn uncompressed_files_for_format<'a>(set: &str,
             Box::new(BufReader::new(file))
         } else if tokens[1] == "gz" {
             Box::new(file.gz_decode().unwrap())
+        } else if tokens[1] == "deflate" {
+            Box::new(file.zlib_decode())
         } else if tokens[1] == "snz" {
             Box::new(SnappyFramedDecoder::new(file, CrcMode::Ignore))
         } else {
@@ -58,27 +60,13 @@ pub fn uncompressed_files_for_format<'a>(set: &str,
 }
 
 pub fn bibi_pod<'a, 'b, T>(set: &str, table: &str, format: &str) -> BI<'a, BI<'b, T>>
-    where T: Decodable + Send + 'static
+where T: Decodable + Send + 'static
 {
     let tokens: Vec<String> = format.split("-").map(|x| x.to_owned()).collect();
-    Box::new(files_for_format(set, table, format).into_iter().map(move |f| {
-        let file = fs::File::open(f).unwrap();
-
-        let decompressed: Box<io::Read + Send> = if tokens.len() == 1 {
-            Box::new(BufReader::new(file))
-        } else if tokens[1] == "deflate" {
-            Box::new(file.zlib_decode())
-        } else if tokens[1] == "gz" {
-            Box::new(file.gz_decode().unwrap())
-        } else if tokens[1] == "snz" {
-            Box::new(SnappyFramedDecoder::new(file, CrcMode::Ignore))
-        } else {
-            panic!("unknown compression {}", tokens[1]);
-        };
-
+    Box::new(uncompressed_files_for_format(set, table, format).into_iter().map(move |f| {
         let it: BI<T> = match &*tokens[0] {
-            "csv" | "text" => Box::new(csv::CSVReader::new(decompressed)),
-            "rmp" => Box::new(rmp::RMPReader::new(decompressed)),
+            "csv" | "text" => Box::new(csv::CSVReader::new(f)),
+            "rmp" => Box::new(rmp::RMPReader::new(f)),
             any => panic!("unknown format {}", any),
         };
         it
@@ -88,7 +76,8 @@ pub fn bibi_pod<'a, 'b, T>(set: &str, table: &str, format: &str) -> BI<'a, BI<'b
 pub fn bibi_cap<'a, 'b>(set: &str,
                         table: &str,
                         format: &str)
-                        -> BI<'a, BI<'b, Reader<OwnedSegments>>> {
+-> BI<'a, BI<'b, Reader<OwnedSegments>>> {
     Box::new(uncompressed_files_for_format(set, table, format)
-                 .map(|f| -> BI<Reader<OwnedSegments>> { Box::new(cap::CapReader::new(f)) }))
+             .map(|f| -> BI<Reader<OwnedSegments>> { Box::new(cap::CapReader::new(f)) }))
 }
+

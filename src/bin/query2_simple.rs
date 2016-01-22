@@ -11,7 +11,6 @@ fn main() {
     let reduce = |a: &f32, b: &f32| a + b;
     let mut aggregator = aggregators::MultiHashMapAggregator::new(&reduce, 256);
     MapOp::new_map_reduce(map)
-        .with_progress(true)
         .with_workers(16)
         .run(input, &mut aggregator);
     aggregator.converge();
