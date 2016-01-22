@@ -97,7 +97,7 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
         } else if tokens[1] == "gz" {
             Box::new(file.gz_encode(Compression::Default))
         } else if tokens[1] == "snz" {
-            Box::new(SnappyFramedEncoder::new(file).unwrap())
+            Box::new(io::BufWriter::with_capacity(64*1024, SnappyFramedEncoder::new(file).unwrap()))
         } else {
             panic!("unknown compression {}", tokens[1]);
         };
