@@ -121,12 +121,6 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
                     item.write_to_cap(&mut compressed, Mode::Unpacked).unwrap();
                 }
             }
-            "pcap" => {
-                for item in reader.decode() {
-                    let item: T = item.unwrap();
-                    item.write_to_cap(&mut compressed, Mode::Packed).unwrap();
-                }
-            }
             "cbor" => {
                 let mut coder = ::cbor::Encoder::from_writer(&mut compressed);
                 for item in reader.decode() {
@@ -141,10 +135,22 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
                     coder.encode(item).unwrap();
                 }
             }
+            "mcap" => {
+                for item in reader.decode() {
+                    let item: T = item.unwrap();
+                    item.write_to_cap(&mut compressed, Mode::Mappable).unwrap();
+                }
+            }
             "pbuf" => {
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     item.write_to_pbuf(&mut compressed).unwrap();
+                }
+            }
+            "pcap" => {
+                for item in reader.decode() {
+                    let item: T = item.unwrap();
+                    item.write_to_cap(&mut compressed, Mode::Packed).unwrap();
                 }
             }
             "rmp" => {

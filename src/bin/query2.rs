@@ -141,6 +141,20 @@ impl Runner {
                                   visit.get_ad_revenue())
                              }))
                          }))
+        } else if self.input == "mcap" {
+            Box::new(dazone::files::files_for_format(&*self.set, "uservisits", &*self.input).into_iter()
+                         .take(self.chunks)
+                         .enumerate()
+                         .filter_map(move |(i, f)| {
+                             if i % peers == index {
+                                 Some(f)
+                             } else {
+                                 None
+                             }
+                         })
+                         .map(move |file| -> BI<(K, f32)> {
+                             Box::new(dazone::files::cap::MmapReader::new(file))
+                         }))
         } else if self.input.starts_with("pbuf") {
             Box::new(dazone::files::bibi_pbuf(&*self.set, "uservisits", &*self.input)
                          .take(self.chunks)

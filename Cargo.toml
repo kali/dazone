@@ -30,6 +30,7 @@ cbor = "*"
 bincode = "*"
 protobuf = "*"
 byteorder = "*"
+memmap = "*"
 
 [dependencies.capdata]
 path = "capdata"

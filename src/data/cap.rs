@@ -4,6 +4,9 @@ use capdata::{ranking, user_visits};
 use capnp::message::Builder;
 use capnp::serialize_packed;
 use capnp::serialize;
+use capnp::message::Allocator;
+
+use byteorder::{WriteBytesExt, LittleEndian};
 
 use data::pod::{UserVisits, Ranking};
 
@@ -11,11 +14,22 @@ use Dx16Result;
 
 #[derive(PartialEq,Clone,Copy)]
 pub enum Mode {
-    Packed, Unpacked
+    Packed, Unpacked, Mappable
 }
 
 pub trait Capitanable {
     fn write_to_cap<W: Write>(&self, w: &mut W, mode:Mode) -> Dx16Result<()>;
+}
+
+fn write_message<W:Write,A:Allocator>(message:&Builder<A>, w: &mut W, mode:Mode) -> Dx16Result<()> {
+    Ok(try!(match mode {
+        Mode::Packed => serialize_packed::write_message(w, message),
+        Mode::Unpacked => serialize::write_message(w, message),
+        Mode::Mappable => {
+            w.write_u64::<LittleEndian>(serialize::compute_serialized_size_in_words(message) as u64).unwrap();
+            serialize::write_message(w, message)
+        }
+    }))
 }
 
 impl Capitanable for Ranking {
@@ -27,11 +41,7 @@ impl Capitanable for Ranking {
             ranking.set_pagerank(self.pagerank);
             ranking.set_duration(self.duration);
         }
-        match mode {
-            Mode::Packed => serialize_packed::write_message(w, &mut message),
-            Mode::Unpacked => serialize::write_message(w, &mut message),
-        }.unwrap();
-        Ok(())
+        write_message(&message, w, mode)
     }
 }
 
@@ -50,10 +60,6 @@ impl Capitanable for UserVisits {
             it.set_search_word(&*self.search_word);
             it.set_duration(self.duration as u64);
         }
-        match mode {
-            Mode::Packed => serialize_packed::write_message(w, &mut message),
-            Mode::Unpacked => serialize::write_message(w, &mut message),
-        }.unwrap();
-        Ok(())
+        write_message(&message, w, mode)
     }
 }
