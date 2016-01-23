@@ -5,7 +5,7 @@ SET=5nodes
 
 for comp in gz snz ""
 do
-    for enc in csv bincode cbor rmp cap
+    for enc in csv bincode cbor rmp pbuf cap
     do
         if [ -z "$comp" ]
         then
