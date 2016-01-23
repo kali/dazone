@@ -28,7 +28,7 @@ use snappy_framed::write::SnappyFramedEncoder;
 
 use dazone::Dx16Result;
 use dazone::data;
-use dazone::data::cap::Capitanable;
+use dazone::data::cap::{ Capitanable, Mode };
 use dazone::data::pbuf::Protobufable;
 
 use pbr::ProgressBar;
@@ -118,7 +118,13 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
             "cap" => {
                 for item in reader.decode() {
                     let item: T = item.unwrap();
-                    item.write_to_cap(&mut compressed).unwrap();
+                    item.write_to_cap(&mut compressed, Mode::Unpacked).unwrap();
+                }
+            }
+            "pcap" => {
+                for item in reader.decode() {
+                    let item: T = item.unwrap();
+                    item.write_to_cap(&mut compressed, Mode::Packed).unwrap();
                 }
             }
             "cbor" => {

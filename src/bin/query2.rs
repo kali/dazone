@@ -21,6 +21,7 @@ use timely::dataflow::channels::pact::Exchange;
 use capnp::serialize::OwnedSegments;
 use capnp::message::Reader;
 
+
 use std::hash::Hasher;
 use std::collections::HashMap;
 
@@ -121,7 +122,7 @@ impl Runner {
     fn sharded_input<'a, K>(&self, index: usize, peers: usize) -> BI<'a, BI<'a, (K, f32)>>
         where K: ShortBytesArray
     {
-        if self.input.starts_with("cap") {
+        if self.input.starts_with("cap") || self.input.starts_with("pcap") {
             Box::new(dazone::files::bibi_cap(&*self.set, "uservisits", &*self.input)
                          .take(self.chunks)
                          .enumerate()

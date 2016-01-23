@@ -7,6 +7,8 @@ use rustc_serialize::Decodable;
 use capnp::serialize::OwnedSegments;
 use capnp::message::Reader;
 
+use data::cap::Mode;
+
 use protobuf::MessageStatic;
 
 use std::{fs, io, path};
@@ -85,8 +87,9 @@ pub fn bibi_cap<'a, 'b>(set: &str,
                         table: &str,
                         format: &str)
 -> BI<'a, BI<'b, Reader<OwnedSegments>>> {
+    let mode = if format.starts_with("cap") { Mode::Unpacked } else { Mode::Packed };
     Box::new(uncompressed_files_for_format(set, table, format)
-             .map(|f| -> BI<Reader<OwnedSegments>> { Box::new(cap::CapReader::new(f)) }))
+             .map(move |f| -> BI<Reader<OwnedSegments>> { Box::new(cap::CapReader::new(f, mode)) }))
 }
 
 pub fn bibi_pbuf<'a, 'b, T>(set: &str,

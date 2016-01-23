@@ -3,17 +3,23 @@ use std::io::Write;
 use capdata::{ranking, user_visits};
 use capnp::message::Builder;
 use capnp::serialize_packed;
+use capnp::serialize;
 
 use data::pod::{UserVisits, Ranking};
 
 use Dx16Result;
 
+#[derive(PartialEq,Clone,Copy)]
+pub enum Mode {
+    Packed, Unpacked
+}
+
 pub trait Capitanable {
-    fn write_to_cap<W: Write>(&self, w: &mut W) -> Dx16Result<()>;
+    fn write_to_cap<W: Write>(&self, w: &mut W, mode:Mode) -> Dx16Result<()>;
 }
 
 impl Capitanable for Ranking {
-    fn write_to_cap<W: Write>(&self, w: &mut W) -> Dx16Result<()> {
+    fn write_to_cap<W: Write>(&self, w: &mut W, mode:Mode) -> Dx16Result<()> {
         let mut message = Builder::new_default();
         {
             let mut ranking = message.init_root::<ranking::Builder>();
@@ -21,13 +27,16 @@ impl Capitanable for Ranking {
             ranking.set_pagerank(self.pagerank);
             ranking.set_duration(self.duration);
         }
-        try!(serialize_packed::write_message(w, &mut message));
+        match mode {
+            Mode::Packed => serialize_packed::write_message(w, &mut message),
+            Mode::Unpacked => serialize::write_message(w, &mut message),
+        }.unwrap();
         Ok(())
     }
 }
 
 impl Capitanable for UserVisits {
-    fn write_to_cap<W: Write>(&self, w: &mut W) -> Dx16Result<()> {
+    fn write_to_cap<W: Write>(&self, w: &mut W, mode:Mode) -> Dx16Result<()> {
         let mut message = Builder::new_default();
         {
             let mut it = message.init_root::<user_visits::Builder>();
@@ -41,7 +50,10 @@ impl Capitanable for UserVisits {
             it.set_search_word(&*self.search_word);
             it.set_duration(self.duration as u64);
         }
-        try!(serialize_packed::write_message(w, &mut message));
+        match mode {
+            Mode::Packed => serialize_packed::write_message(w, &mut message),
+            Mode::Unpacked => serialize::write_message(w, &mut message),
+        }.unwrap();
         Ok(())
     }
 }
