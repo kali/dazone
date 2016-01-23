@@ -3,11 +3,12 @@
 SET=5nodes
 
 
-for comp in "" gz snz
+for comp in gz snz ""
 do
     for enc in csv bincode cbor rmp cap
     do
-        if [ -n "comp " ]
+        if [ -z "$comp" ]
+        then
             format="$enc"
         else
             format="$enc-$comp"
