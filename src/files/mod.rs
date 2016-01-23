@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use snappy_framed::read::{CrcMode, SnappyFramedDecoder};
 use flate2::FlateReadExt;
 
@@ -5,6 +6,8 @@ use rustc_serialize::Decodable;
 
 use capnp::serialize::OwnedSegments;
 use capnp::message::Reader;
+
+use protobuf::MessageStatic;
 
 use std::{fs, io, path};
 use std::io::BufReader;
@@ -16,6 +19,7 @@ pub mod cap;
 pub mod rmp;
 pub mod csv;
 pub mod cbor;
+pub mod pbuf;
 
 pub fn data_dir_for(state: &str, set: &str, table: &str) -> String {
     format!("data/{}/{}/{}", state, set, table)
@@ -67,10 +71,10 @@ where T: Decodable + Send + 'static
     let tokens: Vec<String> = format.split("-").map(|x| x.to_owned()).collect();
     Box::new(uncompressed_files_for_format(set, table, format).into_iter().map(move |f| {
         let it: BI<T> = match &*tokens[0] {
+            "bincode" => Box::new(bincode::BincodeReader::new(f)),
+            "cbor" => Box::new(cbor::CborReader::new(f)),
             "csv" | "text" => Box::new(csv::CSVReader::new(f)),
             "rmp" => Box::new(rmp::RMPReader::new(f)),
-            "cbor" => Box::new(cbor::CborReader::new(f)),
-            "bincode" => Box::new(bincode::BincodeReader::new(f)),
             any => panic!("unknown format {}", any),
         };
         it
@@ -85,3 +89,10 @@ pub fn bibi_cap<'a, 'b>(set: &str,
              .map(|f| -> BI<Reader<OwnedSegments>> { Box::new(cap::CapReader::new(f)) }))
 }
 
+pub fn bibi_pbuf<'a, 'b, T>(set: &str,
+                                          table: &str,
+                                          format: &str)
+-> BI<'a, BI<'b, T>> where T:MessageStatic+ Send{
+    Box::new(uncompressed_files_for_format(set, table, format)
+             .map(|f| -> BI<T> { Box::new(pbuf::PBufReader{ stream: f, phantom:PhantomData}) }))
+}

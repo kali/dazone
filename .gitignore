@@ -1,6 +1,6 @@
 target
 Cargo.lock
 zpipe
-data
+/data
 ignored
 *.bk

@@ -29,6 +29,7 @@ use snappy_framed::write::SnappyFramedEncoder;
 use dazone::Dx16Result;
 use dazone::data;
 use dazone::data::cap::Capitanable;
+use dazone::data::pbuf::Protobufable;
 
 use pbr::ProgressBar;
 
@@ -65,7 +66,7 @@ fn main() {
 }
 
 fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
-    where T: Decodable + Encodable + Capitanable + Debug
+    where T: Decodable + Encodable + Capitanable + Debug + Protobufable
 {
     let source_root = dazone::files::data_dir_for("text-deflate", set, table);
     let target_root = dazone::files::data_dir_for(dst, set, table);
@@ -132,6 +133,12 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     coder.encode(item).unwrap();
+                }
+            }
+            "pbuf" => {
+                for item in reader.decode() {
+                    let item: T = item.unwrap();
+                    item.write_to_pbuf(&mut compressed).unwrap();
                 }
             }
             "rmp" => {

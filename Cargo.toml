@@ -28,6 +28,8 @@ snappy_framed = "0.1.0"
 fnv = "*"
 cbor = "*"
 bincode = "*"
+protobuf = "*"
+byteorder = "*"
 
 [dependencies.capdata]
 path = "capdata"

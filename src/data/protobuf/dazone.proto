@@ -1,0 +1,17 @@
+message Ranking {
+    required string url = 1;
+    required uint64 pagerank = 2;
+    required uint64 duration = 3;
+}
+
+message UserVisits {
+    required string sourceIP = 1;
+    required string destURL = 2;
+    required string visitDate = 3;
+    required float adRevenue = 4;
+    required string userAgent = 5;
+    required string countryCode = 6;
+    required string languageCode = 7;
+    required string searchWord = 8;
+    required uint64 duration = 9;
+}

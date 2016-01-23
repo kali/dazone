@@ -140,6 +140,22 @@ impl Runner {
                                   visit.get_ad_revenue())
                              }))
                          }))
+        } else if self.input.starts_with("pbuf") {
+            Box::new(dazone::files::bibi_pbuf(&*self.set, "uservisits", &*self.input)
+                         .take(self.chunks)
+                         .enumerate()
+                         .filter_map(move |(i, f)| {
+                             if i % peers == index {
+                                 Some(f)
+                             } else {
+                                 None
+                             }
+                         })
+                         .map(move |chunk| -> BI<(K, f32)> {
+                             Box::new(chunk.map(move |visit: ::dazone::data::pbuf::UserVisits| {
+                                 (K::prefix(visit.get_sourceIP()), visit.get_adRevenue())
+                             }))
+                         }))
         } else {
             Box::new(dazone::files::bibi_pod(&*self.set, "uservisits", &*self.input)
                          .take(self.chunks)

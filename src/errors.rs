@@ -10,6 +10,7 @@ quick_error! {
         ValueRead(err: ::rmp::decode::ValueReadError) { from() }
         RmpDecode(err: ::rmp_serialize::decode::Error) { from() }
         Capnp(err: ::capnp::Error) { from() }
+        PBuf(err: ::protobuf::error::ProtobufError) { from() }
         Csv(err: ::csv::Error) { from() }
         DecodeString { }
     }

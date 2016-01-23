@@ -4,6 +4,7 @@
 
 extern crate abomonation;
 extern crate bincode;
+extern crate byteorder;
 extern crate capdata;
 extern crate capnp;
 extern crate cbor;
@@ -14,6 +15,7 @@ extern crate glob;
 extern crate libc;
 extern crate num_cpus;
 extern crate pbr;
+extern crate protobuf;
 #[macro_use]
 extern crate quick_error;
 extern crate radix_trie;
