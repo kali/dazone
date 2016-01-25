@@ -89,27 +89,30 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
     let jobs = try!(jobs);
 
     let pb = Mutex::new(ProgressBar::new(jobs.len()));
-    let mut pool = simple_parallel::Pool::new(2 * num_cpus::get());
+    let mut pool = simple_parallel::Pool::new(/*2 * num_cpus::get()*/ 1);
     let task = |job: (path::PathBuf, path::PathBuf)| -> Dx16Result<()> {
-        let input = flate2::FlateReadExt::zlib_decode(fs::File::open(job.0).unwrap());
+        let input = flate2::FlateReadExt::zlib_decode(fs::File::open(job.0.clone()).unwrap());
         let mut reader = csv::Reader::from_reader(input).has_headers(false);
 
         let tokens: Vec<&str> = dst.split("-").collect();
 
-        let file = fs::File::create(job.1).unwrap();
-        let mut compressed: Box<io::Write> = if tokens.len() == 1 {
-            Box::new(BufWriter::new(file))
-        } else if tokens[1] == "gz" {
-            Box::new(file.gz_encode(Compression::Default))
-        } else if tokens[1] == "snz" {
-            Box::new(io::BufWriter::with_capacity(64 * 1024,
-                                                  SnappyFramedEncoder::new(file).unwrap()))
-        } else {
-            panic!("unknown compression {}", tokens[1]);
-        };
+        fn compress<P:AsRef<path::Path>>(tokens:&Vec<&str>, p:P) -> Box<io::Write> {
+            let file = fs::File::create(p).unwrap();
+            if tokens.len() == 1 {
+                Box::new(BufWriter::new(file))
+            } else if tokens[1] == "gz" {
+                Box::new(file.gz_encode(Compression::Default))
+            } else if tokens[1] == "snz" {
+                Box::new(io::BufWriter::with_capacity(64 * 1024,
+                                                      SnappyFramedEncoder::new(file).unwrap()))
+            } else {
+                panic!("unknown compression {}", tokens[1]);
+            }
+        }
 
         match tokens[0] {
             "bincode" => {
+                let mut compressed = compress(&tokens, job.1);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     bincode::rustc_serialize::encode_into(&item,
@@ -118,13 +121,27 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
                         .unwrap();
                 }
             }
+            "buren" => {
+                fs::create_dir_all(job.1.clone()).unwrap();
+                let mut coder = ::dazone::buren::Serializer::new(|col| {
+                    let mut file = job.1.clone();
+                    file.push(format!("col-{}", col));
+                    compress(&tokens, file)
+                });
+                for item in reader.decode() {
+                    let item: T = item.unwrap();
+                    item.serialize(&mut coder).unwrap();
+                }
+            }
             "cap" => {
+                let mut compressed = compress(&tokens, job.1);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     item.write_to_cap(&mut compressed, Mode::Unpacked).unwrap();
                 }
             }
             "cbor" => {
+                let mut compressed = compress(&tokens, job.1);
                 let mut coder = ::cbor::Encoder::from_writer(&mut compressed);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
@@ -132,6 +149,7 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
                 }
             }
             "csv" => {
+                let compressed = compress(&tokens, job.1);
                 let mut coder = ::csv::Writer::from_writer(compressed);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
@@ -139,6 +157,7 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
                 }
             }
             "json" => {
+                let mut compressed = compress(&tokens, job.1);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     ::serde_json::ser::to_writer(&mut compressed, &item).unwrap();
@@ -146,24 +165,28 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
                 }
             }
             "mcap" => {
+                let mut compressed = compress(&tokens, job.1);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     item.write_to_cap(&mut compressed, Mode::Mappable).unwrap();
                 }
             }
             "pbuf" => {
+                let mut compressed = compress(&tokens, job.1);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     item.write_to_pbuf(&mut compressed).unwrap();
                 }
             }
             "pcap" => {
+                let mut compressed = compress(&tokens, job.1);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     item.write_to_cap(&mut compressed, Mode::Packed).unwrap();
                 }
             }
             "rmp" => {
+                let mut compressed = compress(&tokens, job.1);
                 let mut coder = ::rmp_serialize::Encoder::new(&mut compressed);
                 for item in reader.decode() {
                     let item: T = item.unwrap();

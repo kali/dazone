@@ -32,6 +32,7 @@ extern crate simple_parallel;
 extern crate snappy_framed;
 extern crate time;
 
+pub mod buren;
 pub mod errors;
 pub mod data;
 pub mod files;
