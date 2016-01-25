@@ -10,6 +10,8 @@ extern crate pbr;
 extern crate rmp;
 extern crate rmp_serialize;
 extern crate rustc_serialize;
+extern crate serde;
+extern crate serde_json;
 extern crate simple_parallel;
 extern crate snappy_framed;
 
@@ -30,6 +32,7 @@ use dazone::Dx16Result;
 use dazone::data;
 use dazone::data::cap::{ Capitanable, Mode };
 use dazone::data::pbuf::Protobufable;
+use serde::Serialize;
 
 use pbr::ProgressBar;
 
@@ -66,7 +69,7 @@ fn main() {
 }
 
 fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
-    where T: Decodable + Encodable + Capitanable + Debug + Protobufable
+    where T: Decodable + Encodable + Capitanable + Debug + Protobufable + Serialize
 {
     let source_root = dazone::files::data_dir_for("text-deflate", set, table);
     let target_root = dazone::files::data_dir_for(dst, set, table);
@@ -133,6 +136,13 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     coder.encode(item).unwrap();
+                }
+            }
+            "json" => {
+                for item in reader.decode() {
+                    let item: T = item.unwrap();
+                    ::serde_json::ser::to_writer(&mut compressed, &item).unwrap();
+                    write!(compressed, "\n").unwrap();
                 }
             }
             "mcap" => {

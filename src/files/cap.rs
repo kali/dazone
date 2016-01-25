@@ -1,10 +1,10 @@
-use std::{fs,io};
+use std::io;
 
 use std::marker::PhantomData;
 
 use capnp;
 use capnp::{ serialize, serialize_packed, Word};
-use capnp::serialize::{OwnedSegments, SliceSegments};
+use capnp::serialize::OwnedSegments;
 use capnp::message::Reader;
 
 use data::cap::Mode;

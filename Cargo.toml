@@ -31,6 +31,9 @@ bincode = "*"
 protobuf = "*"
 byteorder = "*"
 memmap = "*"
+serde = "*"
+serde_json = "*"
+serde_macros = "*"
 
 [dependencies.capdata]
 path = "capdata"

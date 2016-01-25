@@ -1,6 +1,9 @@
 #![feature(hashmap_hasher)]
 #![feature(reflect_marker)]
-#![feature(iter_arith)]
+#![feature(iter_arith,plugin)]
+#![feature(custom_derive)]
+
+#![plugin(serde_macros)]
 
 extern crate abomonation;
 extern crate bincode;
@@ -23,6 +26,8 @@ extern crate radix_trie;
 extern crate rmp;
 extern crate rmp_serialize;
 extern crate rustc_serialize;
+extern crate serde;
+extern crate serde_json;
 extern crate simple_parallel;
 extern crate snappy_framed;
 extern crate time;

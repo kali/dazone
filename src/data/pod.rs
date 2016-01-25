@@ -1,12 +1,11 @@
-
-#[derive(RustcDecodable,RustcEncodable,Debug)]
+#[derive(RustcDecodable,RustcEncodable,Debug,Serialize,Deserialize)]
 pub struct Ranking {
     pub url: String,
     pub pagerank: u64,
     pub duration: u64,
 }
 
-#[derive(RustcDecodable,RustcEncodable,Debug)]
+#[derive(RustcDecodable,RustcEncodable,Debug,Serialize,Deserialize)]
 pub struct UserVisits {
     pub source_ip: String,
     pub dest_url: String,

@@ -4,7 +4,7 @@ use flate2::FlateReadExt;
 
 use rustc_serialize::Decodable;
 
-use capnp::serialize::{ OwnedSegments, SliceSegments };
+use capnp::serialize::OwnedSegments;
 use capnp::message::Reader;
 
 use data::cap::Mode;
@@ -16,11 +16,14 @@ use std::io::BufReader;
 
 use crunch::BI;
 
+use serde::Deserialize;
+
 pub mod bincode;
 pub mod cap;
 pub mod rmp;
 pub mod csv;
 pub mod cbor;
+pub mod json;
 pub mod pbuf;
 
 pub fn data_dir_for(state: &str, set: &str, table: &str) -> String {
@@ -68,7 +71,7 @@ pub fn uncompressed_files_for_format<'a>(set: &str,
 }
 
 pub fn bibi_pod<'a, 'b, T>(set: &str, table: &str, format: &str) -> BI<'a, BI<'b, T>>
-where T: Decodable + Send + 'static
+where T: Decodable + Deserialize + Send + 'static
 {
     let tokens: Vec<String> = format.split("-").map(|x| x.to_owned()).collect();
     Box::new(uncompressed_files_for_format(set, table, format).into_iter().map(move |f| {
@@ -76,6 +79,7 @@ where T: Decodable + Send + 'static
             "bincode" => Box::new(bincode::BincodeReader::new(f)),
             "cbor" => Box::new(cbor::CborReader::new(f)),
             "csv" | "text" => Box::new(csv::CSVReader::new(f)),
+            "json" => Box::new(json::JsonReader::new(f)),
             "rmp" => Box::new(rmp::RMPReader::new(f)),
             any => panic!("unknown format {}", any),
         };
