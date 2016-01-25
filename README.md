@@ -109,4 +109,23 @@ You should see something like:
 
 If this is working, then good. Now set SET=5nodes and start again. It will take a while. Oh, and 30GB.
 
+### Running
 
+Once you have some data, you can try query2_simple.
+
+```
+cargo build --release
+./target/release/query2_simple
+```
+
+Your fans should activate.
+
+Next, you can play with pack and query2 to try other formats. The basic idea
+is, you use `pack` to translate the input in another format. For instance,
+this will reencode the text-deflate in gzipped bincode:
+
+`./target/release/pack uservisits bindode-gz`
+
+And then you can try this out with the more elaborate query2 runner:
+
+`./target/release/query2 -i bindode-gz`
