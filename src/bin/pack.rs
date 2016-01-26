@@ -84,7 +84,7 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
     let jobs = try!(jobs);
 
     let pb = Mutex::new(ProgressBar::new(jobs.len()));
-    let mut pool = simple_parallel::Pool::new(/*2 * num_cpus::get()*/ 1);
+    let mut pool = simple_parallel::Pool::new(2 * num_cpus::get());
     let task = |job: (path::PathBuf, path::PathBuf)| -> Dx16Result<()> {
         let input = flate2::FlateReadExt::zlib_decode(fs::File::open(job.0.clone()).unwrap());
         let mut reader = csv::Reader::from_reader(input).has_headers(false);
