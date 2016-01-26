@@ -104,11 +104,7 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
             }
             "buren" => {
                 fs::create_dir_all(job.1.clone()).unwrap();
-                let mut coder = ::dazone::buren::Serializer::new(|col| {
-                    let mut file = job.1.clone();
-                    file.push(format!("col-{:03}", col));
-                    compressor.write_file(file)
-                });
+                let mut coder = ::dazone::buren::Serializer::new(job.1, compressor);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     item.serialize(&mut coder).unwrap();

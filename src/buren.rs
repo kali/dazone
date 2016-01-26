@@ -1,30 +1,33 @@
 use std::{io, path};
-use serde::{ de, ser };
+use serde::{ ser };
 use serde::ser::{Serialize, SeqVisitor, MapVisitor};
-use serde::de::{Visitor};
+use serde::de::{ Deserializer};
 
-use byteorder::{LittleEndian, WriteBytesExt};
+use byteorder::{LittleEndian, WriteBytesExt, ReadBytesExt};
 
-pub struct Serializer<W,C> where W: io::Write, C: Fn(usize)->W {
-    pub streams: Vec<W>,
-    pub create: C,
-    pub inited: bool,
-    pub index: usize,
+use files::compressor::Compressor;
+
+pub struct Serializer {
+    pub dir: path::PathBuf,
+    pub streams: Vec<Box<io::Write>>,
+    pub compressor: Compressor,
+    inited: bool,
+    index: usize,
 }
 
-impl<W,C> Serializer<W,C> where W: io::Write, C: Fn(usize)->W {
-    pub fn new(f:C) -> Serializer<W,C> {
-        Serializer { create:f, streams: vec![], inited:false, index:0 }
+impl Serializer {
+    pub fn new(dir: path::PathBuf, compressor:Compressor) -> Serializer {
+        Serializer { dir:dir, compressor:compressor, streams: vec![], inited:false, index:0 }
     }
 }
 
-impl<W,C> ser::Serializer for Serializer<W,C> where W: io::Write, C: Fn(usize)->W{
+impl ser::Serializer for Serializer {
     type Error = io::Error;
 
-    fn visit_bool(&mut self, v: bool) -> Result<(), Self::Error> {
+    fn visit_bool(&mut self, _v: bool) -> Result<(), Self::Error> {
         panic!("not implemented");
     }
-    fn visit_i64(&mut self, v: i64) -> Result<(), Self::Error> {
+    fn visit_i64(&mut self, _v: i64) -> Result<(), Self::Error> {
         panic!("not implemented");
     }
     fn visit_u64(&mut self, v: u64) -> Result<(), Self::Error> {
@@ -52,13 +55,13 @@ impl<W,C> ser::Serializer for Serializer<W,C> where W: io::Write, C: Fn(usize)->
     fn visit_none(&mut self) -> Result<(), Self::Error> {
         panic!("not implemented");
     }
-    fn visit_some<V>(&mut self, value: V) -> Result<(), Self::Error> where V: Serialize {
+    fn visit_some<V>(&mut self, _value: V) -> Result<(), Self::Error> where V: Serialize {
         panic!("not implemented");
     }
-    fn visit_seq<V>(&mut self, visitor: V) -> Result<(), Self::Error> where V: SeqVisitor {
+    fn visit_seq<V>(&mut self, _visitor: V) -> Result<(), Self::Error> where V: SeqVisitor {
         panic!("not implemented");
     }
-    fn visit_seq_elt<T>(&mut self, value: T) -> Result<(), Self::Error> where T: Serialize {
+    fn visit_seq_elt<T>(&mut self, _value: T) -> Result<(), Self::Error> where T: Serialize {
         panic!("not implemented");
     }
     fn visit_map<V>(&mut self, mut visitor: V) -> Result<(), Self::Error> where V: MapVisitor {
@@ -67,34 +70,55 @@ impl<W,C> ser::Serializer for Serializer<W,C> where W: io::Write, C: Fn(usize)->
         self.index = 0;
         Ok(())
     }
-    fn visit_map_elt<K, V>(&mut self, key: K, value: V) -> Result<(), Self::Error> where K: Serialize, V: Serialize {
+    fn visit_map_elt<K, V>(&mut self, _key: K, value: V) -> Result<(), Self::Error> where K: Serialize, V: Serialize {
         if !self.inited {
-            let l = self.streams.len();
-            self.streams.push((self.create)(l));
+            let mut file = self.dir.clone();
+            file.push(format!("col-{:03}", self.index));
+            self.streams.push(self.compressor.write_file(file));
         }
         try!(value.serialize(self));
         Ok(())
     }
 }
 
-pub struct PartialDeserializer<R: io::Read> {
-    pub streams: Vec<R>,
+pub struct PartialDeserializer {
+    pub streams: Vec<Box<io::Read+Send>>,
 }
 
-impl<R: io::Read> PartialDeserializer<R> {
-    pub fn new<O>(f:O, columns: &[usize]) -> PartialDeserializer<R>
-        where O: Fn(usize) -> R
+impl PartialDeserializer {
+    pub fn new(dir:path::PathBuf, compressor:Compressor, columns: &[usize]) -> PartialDeserializer
         {
             PartialDeserializer {
-                streams: columns.iter().map(|col| f(*col)).collect()
+                streams: columns.iter().map(|col| {
+                    let mut file = dir.clone();
+                    file.push(format!("col-{:03}", col));
+                    compressor.read_file(file)
+                }).collect()
             }
         }
+
+    fn read_string(&mut self, field:usize) -> io::Result<String> {
+        let l = try!(self.streams[field].read_u64::<LittleEndian>()) as usize;
+        let mut bytes = Vec::with_capacity(l);
+        unsafe { bytes.set_len(l) };
+        try!(self.streams[field].read_exact(&mut bytes));
+        Ok(unsafe { ::std::mem::transmute(bytes) })
+    }
+
+    fn read_f64(&mut self, field:usize) -> io::Result<f64> {
+        let f = try!(self.streams[field].read_f64::<LittleEndian>());
+        Ok(f)
+    }
 }
 
-impl<R: io::Read> de::Deserializer for PartialDeserializer<R> {
-    type Error = de::value::Error;
+impl Iterator for PartialDeserializer {
+    type Item=(String, f32);
 
-    fn visit<V>(&mut self, visitor: V) -> Result<V::Value, Self::Error> where V: Visitor {
-        panic!("dafuk ?");
+    fn next(&mut self) -> Option<Self::Item> {
+        match (self.read_string(0), self.read_f64(1)) {
+            (Ok(s), Ok(f)) => Some((s,f as f32)),
+            _ => None
+        }
     }
+
 }

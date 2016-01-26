@@ -141,7 +141,6 @@ impl Runner {
                                   visit.get_ad_revenue())
                              }))
                          }))
-            /*
         } else if self.input == "buren" {
             let compressor = dazone::files::compressor::Compressor::for_format(&*self.input);
             Box::new(dazone::files::files_for_format(&*self.set, "uservisits", &*self.input).into_iter()
@@ -155,9 +154,9 @@ impl Runner {
                              }
                          })
                          .map(move |file| -> BI<(K, f32)> {
-                             Box::new(dazone::files::buren::BurenReader::new(compressor, &[0,3]))
+                             let reader = dazone::buren::PartialDeserializer::new(file, compressor, &[0,3]);
+                             Box::new(reader.map(|pair:(String,f32)| (K::prefix(&*pair.0), pair.1)))
                          }))
-                         */
         } else if self.input == "mcap" {
             Box::new(dazone::files::files_for_format(&*self.set, "uservisits", &*self.input).into_iter()
                          .take(self.chunks)

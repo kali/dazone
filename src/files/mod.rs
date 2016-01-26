@@ -16,6 +16,7 @@ use crunch::BI;
 use serde::Deserialize;
 
 pub mod bincode;
+//pub mod buren;
 pub mod cap;
 pub mod compressor;
 pub mod rmp;
