@@ -5,6 +5,7 @@ extern crate cbor;
 extern crate clap;
 extern crate csv;
 extern crate flate2;
+extern crate lz4;
 extern crate num_cpus;
 extern crate pbr;
 extern crate rmp;
@@ -100,6 +101,8 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
             let file = fs::File::create(p).unwrap();
             if tokens.len() == 1 {
                 Box::new(BufWriter::new(file))
+            } else if tokens[1] == "lz4" {
+                Box::new(lz4::EncoderBuilder::new().build(file).unwrap())
             } else if tokens[1] == "gz" {
                 Box::new(file.gz_encode(Compression::Default))
             } else if tokens[1] == "snz" {
