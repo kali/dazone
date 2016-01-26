@@ -1,6 +1,7 @@
 use std::{io, path};
-use serde::ser;
+use serde::{ de, ser };
 use serde::ser::{Serialize, SeqVisitor, MapVisitor};
+use serde::de::{Visitor};
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
@@ -63,14 +64,37 @@ impl<W,C> ser::Serializer for Serializer<W,C> where W: io::Write, C: Fn(usize)->
     fn visit_map<V>(&mut self, mut visitor: V) -> Result<(), Self::Error> where V: MapVisitor {
         while let Some(()) = try!(visitor.visit(self)) { }
         self.inited = true;
+        self.index = 0;
         Ok(())
     }
     fn visit_map_elt<K, V>(&mut self, key: K, value: V) -> Result<(), Self::Error> where K: Serialize, V: Serialize {
-        if ! self.inited {
+        if !self.inited {
             let l = self.streams.len();
             self.streams.push((self.create)(l));
         }
         try!(value.serialize(self));
         Ok(())
+    }
+}
+
+pub struct PartialDeserializer<R: io::Read> {
+    pub streams: Vec<R>,
+}
+
+impl<R: io::Read> PartialDeserializer<R> {
+    pub fn new<O>(f:O, columns: &[usize]) -> PartialDeserializer<R>
+        where O: Fn(usize) -> R
+        {
+            PartialDeserializer {
+                streams: columns.iter().map(|col| f(*col)).collect()
+            }
+        }
+}
+
+impl<R: io::Read> de::Deserializer for PartialDeserializer<R> {
+    type Error = de::value::Error;
+
+    fn visit<V>(&mut self, visitor: V) -> Result<V::Value, Self::Error> where V: Visitor {
+        panic!("dafuk ?");
     }
 }
