@@ -59,15 +59,8 @@ impl Compressor {
             Compressor::Gz => Box::new(::flate2::read::GzDecoder::new(r).unwrap()),
             Compressor::Deflate => Box::new(::flate2::read::DeflateDecoder::new(r)),
             Compressor::Snappy => Box::new(SnappyFramedDecoder::new(r, CrcMode::Ignore)),
-            Compressor::Lz4 => Box::new(LZ4Sendable(::lz4::Decoder::new(r).unwrap())),
+            Compressor::Lz4 => Box::new(::lz4::Decoder::new(r).unwrap()),
         }
     }
 }
 
-pub struct LZ4Sendable<R: io::Read>(::lz4::Decoder<R>);
-unsafe impl<R: io::Read> Send for LZ4Sendable<R> {}
-impl<R: io::Read> io::Read for LZ4Sendable<R> {
-    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.0.read(buf)
-    }
-}

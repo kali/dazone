@@ -16,18 +16,13 @@ extern crate serde_json;
 extern crate simple_parallel;
 extern crate snappy_framed;
 
-use std::{fs, io, path};
-use std::io::BufWriter;
+use std::{fs, path};
 
 use std::fmt::Debug;
 
 use std::sync::Mutex;
 
-use flate2::{Compression, FlateWriteExt};
-
 use rustc_serialize::{Encodable, Decodable};
-
-use snappy_framed::write::SnappyFramedEncoder;
 
 use dazone::Dx16Result;
 use dazone::data;
@@ -135,7 +130,7 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
                 }
             }
             "csv" => {
-                let mut compressed = compressor.write_file(job.1);
+                let compressed = compressor.write_file(job.1);
                 let mut coder = ::csv::Writer::from_writer(compressed);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
@@ -143,7 +138,7 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
                 }
             }
             "json" => {
-                let mut compressed = compressor.write_file(job.1);
+                let mut compressed: Box<::std::io::Write> = compressor.write_file(job.1);
                 for item in reader.decode() {
                     let item: T = item.unwrap();
                     ::serde_json::ser::to_writer(&mut compressed, &item).unwrap();

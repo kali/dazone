@@ -34,7 +34,7 @@ memmap = "*"
 serde = "*"
 serde_json = "*"
 serde_macros = "*"
-lz4 = "1.13.131"
+lz4 = { git = "http://github.com/kali/lz4-rs" }
 
 [dependencies.capdata]
 path = "capdata"

@@ -9,7 +9,7 @@ use data::cap::Mode;
 
 use protobuf::MessageStatic;
 
-use std::{fs, io, path};
+use std::path;
 
 use crunch::BI;
 
