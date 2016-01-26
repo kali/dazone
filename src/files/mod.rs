@@ -46,6 +46,14 @@ pub fn files_for_format(set: &str, table: &str, format: &str) -> Vec<path::PathB
     vec
 }
 
+pub struct LZ4Sendable<R: io::Read>(::lz4::Decoder<R>);
+unsafe impl<R: io::Read> Send for LZ4Sendable<R> {}
+impl<R: io::Read> io::Read for LZ4Sendable<R> {
+    fn read(&mut self, buf: &mut[u8]) -> io::Result<usize> {
+            self.0.read(buf)
+    }
+}
+
 pub fn uncompressed_files_for_format<'a>(set: &str,
                                          table: &str,
                                          format: &str)
@@ -60,6 +68,8 @@ pub fn uncompressed_files_for_format<'a>(set: &str,
             Box::new(file.gz_decode().unwrap())
         } else if tokens[1] == "deflate" {
             Box::new(file.zlib_decode())
+        } else if tokens[1] == "lz4" {
+            Box::new(LZ4Sendable(::lz4::Decoder::new(file).unwrap()))
         } else if tokens[1] == "snz" {
             Box::new(SnappyFramedDecoder::new(file, CrcMode::Ignore))
         } else {

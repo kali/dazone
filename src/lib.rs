@@ -16,6 +16,7 @@ extern crate flate2;
 extern crate fnv;
 extern crate glob;
 extern crate libc;
+extern crate lz4;
 extern crate memmap;
 extern crate num_cpus;
 extern crate pbr;
