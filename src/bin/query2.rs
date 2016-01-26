@@ -32,7 +32,7 @@ fn main() {
                          (@arg SET: -s --set +takes_value "(tiny, 1node, 5nodes")
                          (@arg INPUT: -i --input +takes_value "(cap, rmp)")
                          (@arg CHUNKS: -c --chunks +takes_value "all")
-                         (@arg KEY_LENGTH: -k --key-length +takes_value "(8, 9, 10, 11, 12)")
+                         (@arg KEY_LENGTH: -k --key_length +takes_value "(8, 9, 10, 11, 12)")
                          (@arg REDUCE: -r --reduce +takes_value "(hash, hashes, tries, timely)")
                          (@arg BUCKETS: -b --buckets +takes_value "reduce buckets (256)")
                          (@arg MONITOR: -m --monitor +takes_value "monitor resouce usage")
@@ -65,7 +65,7 @@ fn main() {
 
     let t1 = ::time::get_time();
 
-    let length: usize = matches.value_of("LENGTH").unwrap_or("8").parse().unwrap();
+    let length: usize = matches.value_of("KEY_LENGTH").unwrap_or("8").parse().unwrap();
     match length {
         8 => runner.clone().run::<Bytes8>(),
         9 => runner.clone().run::<Bytes9>(),
@@ -141,7 +141,7 @@ impl Runner {
                                   visit.get_ad_revenue())
                              }))
                          }))
-        } else if self.input == "buren" {
+        } else if self.input.starts_with("buren") {
             let compressor = dazone::files::compressor::Compressor::for_format(&*self.input);
             Box::new(dazone::files::files_for_format(&*self.set, "uservisits", &*self.input).into_iter()
                          .take(self.chunks)
