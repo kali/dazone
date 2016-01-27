@@ -3,9 +3,9 @@
 SET=5nodes
 
 
-for comp in gz snz ""
+for comp in lz4 gz
 do
-    for enc in csv bincode cbor rmp pbuf cap pcap
+    for enc in csv bincode cbor rmp pbuf cap pcap json buren
     do
         if [ -z "$comp" ]
         then

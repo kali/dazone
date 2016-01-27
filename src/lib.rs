@@ -1,4 +1,3 @@
-#![feature(hashmap_hasher)]
 #![feature(reflect_marker)]
 #![feature(iter_arith,plugin)]
 #![feature(custom_derive)]

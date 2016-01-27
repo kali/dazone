@@ -223,7 +223,7 @@ impl Runner {
             }
             "hashes" => {
                 let mut aggregator =
-                        ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hash_state(&r, self.buckets, dazone::crunch::fnv::FnvState);
+                        ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hasher(&r, self.buckets, dazone::crunch::fnv::FnvState);
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
                     .with_monitor(self.monitor.clone())
                     .with_workers(self.workers)

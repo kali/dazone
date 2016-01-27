@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::collections::hash_map::{Entry, RandomState};
-use std::collections::hash_state::HashState;
-use std::hash::{Hash, Hasher};
+use std::hash::{Hash, Hasher, BuildHasher};
 use radix_trie::{Trie, TrieKey};
 use std::sync::Mutex;
 
@@ -13,7 +12,7 @@ pub struct HashMapAggregator<'a, R, K, V, S>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static
+          S: Send + Sync + BuildHasher + 'static
 {
     pub hashmap: Mutex<HashMap<K, V, S>>,
     pub reducer: &'a R,
@@ -25,7 +24,7 @@ impl<'a, R, K, V> HashMapAggregator<'a, R, K, V, RandomState>
           V: Send + 'static
 {
     pub fn new(reducer: &'a R) -> HashMapAggregator<'a, R, K, V, RandomState> {
-        HashMapAggregator::with_hash_state(reducer, RandomState::default())
+        HashMapAggregator::with_hasher(reducer, RandomState::default())
     }
 }
 
@@ -33,12 +32,12 @@ impl<'a, R, K, V, S> HashMapAggregator<'a, R, K, V, S>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static
+          S: Send + Sync + BuildHasher + 'static
 {
-    pub fn with_hash_state(reducer: &'a R, s: S) -> HashMapAggregator<'a, R, K, V, S> {
+    pub fn with_hasher(reducer: &'a R, s: S) -> HashMapAggregator<'a, R, K, V, S> {
         {
             HashMapAggregator {
-                hashmap: Mutex::new(HashMap::with_hash_state(s)),
+                hashmap: Mutex::new(HashMap::with_hasher(s)),
                 reducer: reducer,
             }
         }
@@ -52,7 +51,7 @@ impl<'a, R, K, V, S> Aggregator<'a, R, K, V> for HashMapAggregator<'a, R, K, V, 
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static
+          S: Send + Sync + BuildHasher + 'static
 {
     fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b> {
         Box::new(HashMapInlet {
@@ -71,7 +70,7 @@ struct HashMapInlet<'a, 'b, R, K, V, S>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static,
+          S: Send + Sync + BuildHasher + 'static,
           'a: 'b
 {
     parent: &'b HashMapAggregator<'a, R, K, V, S>,
@@ -84,7 +83,7 @@ impl<'a, 'b, R, K, V, S> Inlet<R, K, V> for HashMapInlet<'a, 'b, R, K, V, S>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static,
+          S: Send + Sync + BuildHasher + 'static,
           'a: 'b
 {
     fn push_one(&mut self, k: K, v: V) {
@@ -95,7 +94,7 @@ impl<'a, 'b, R, K, V, S> Inlet<R, K, V> for HashMapInlet<'a, 'b, R, K, V, S>
 impl<'a, 'b, R, K, V, S> Drop for HashMapInlet<'a, 'b, R, K, V, S>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
-          S: Send + Sync + HashState + 'static,
+          S: Send + Sync + BuildHasher + 'static,
           V: Send + 'static
 {
     fn drop(&mut self) {
@@ -112,7 +111,7 @@ trait MultiAggregator<'a, R,K,V, S>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static, {
+          S: Send + Sync + BuildHasher + 'static, {
 
     fn partition(&self, k: &K) -> usize;
 
@@ -131,7 +130,7 @@ pub struct MultiHashMapAggregator<'a, R, K, V, S>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static + Clone
+          S: Send + Sync + BuildHasher + 'static + Clone
 {
     hashmaps: Vec<Mutex<HashMap<K, V, S>>>,
     reducer: &'a R,
@@ -146,7 +145,7 @@ impl<'a, R, K, V> MultiHashMapAggregator<'a, R, K, V, RandomState>
     pub fn new(reducer: &'a R,
                partitions: usize)
                -> MultiHashMapAggregator<'a, R, K, V, RandomState> {
-        MultiHashMapAggregator::with_hash_state(reducer, partitions, RandomState::default())
+        MultiHashMapAggregator::with_hasher(reducer, partitions, RandomState::default())
     }
 }
 
@@ -154,16 +153,16 @@ impl<'a, R, K, V, S> MultiHashMapAggregator<'a, R, K, V, S>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static + Clone
+          S: Send + Sync + BuildHasher + 'static + Clone
 {
-    pub fn with_hash_state(reducer: &'a R,
+    pub fn with_hasher(reducer: &'a R,
                            partitions: usize,
                            s: S)
                            -> MultiHashMapAggregator<'a, R, K, V, S> {
         {
             MultiHashMapAggregator::<'a, R, K, V, S> {
                 hashmaps: (0..partitions)
-                              .map(|_| Mutex::new(HashMap::with_hash_state(s.clone())))
+                              .map(|_| Mutex::new(HashMap::with_hasher(s.clone())))
                               .collect(),
                 reducer: reducer,
                 partitioner: s,
@@ -180,7 +179,7 @@ impl<'a, R, K, V, S, H> MultiAggregator<'a, R, K, V, S> for MultiHashMapAggregat
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState<Hasher = H> + Clone + 'static,
+          S: Send + Sync + BuildHasher<Hasher = H> + Clone + 'static,
           H: Hasher
 {
     fn update_partition(&self, partition: usize, kvs: ::std::collections::hash_map::Drain<K, V>) {
@@ -191,7 +190,7 @@ impl<'a, R, K, V, S, H> MultiAggregator<'a, R, K, V, S> for MultiHashMapAggregat
     }
 
     fn partition(&self, k: &K) -> usize {
-        let mut s: H = self.partitioner.hasher();
+        let mut s: H = self.partitioner.build_hasher();
         k.hash(&mut s);
         s.finish() as usize % self.hashmaps.len()
     }
@@ -201,10 +200,10 @@ impl<'a, R, K, V, S> Aggregator<'a, R, K, V> for MultiHashMapAggregator<'a, R, K
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + Clone + 'static
+          S: Send + Sync + BuildHasher + Clone + 'static
 {
     fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b> {
-        MultiHashMapInlet::with_hash_state(self,
+        MultiHashMapInlet::with_hasher(self,
                                            self.hashmaps.len(),
                                            self.reducer,
                                            i,
@@ -250,7 +249,7 @@ impl<'a, R, K, V> MultiTrieAggregator<'a, R, K, V>
 impl<'a, R, K, V, S> MultiAggregator<'a, R, K, V, S> for MultiTrieAggregator<'a, R, K, V>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static + TrieKey,
-          S: Send + Sync + HashState + 'static,
+          S: Send + Sync + BuildHasher + 'static,
           V: Send + 'static
 {
     fn update_partition(&self, partition: usize, kvs: ::std::collections::hash_map::Drain<K, V>) {
@@ -278,7 +277,7 @@ impl<'a, R, K, V> Aggregator<'a, R, K, V> for MultiTrieAggregator<'a, R, K, V>
           V: Send + 'static
 {
     fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b> {
-        MultiHashMapInlet::with_hash_state(self,
+        MultiHashMapInlet::with_hasher(self,
                                            self.tries.len(),
                                            self.reducer,
                                            i,
@@ -296,7 +295,7 @@ struct MultiHashMapInlet<'a, 'b, R, K, V, S>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static,
+          S: Send + Sync + BuildHasher + 'static,
           'a: 'b
 {
     parent: &'b MultiAggregator<'a, R, K, V, S>,
@@ -310,10 +309,10 @@ impl<'a, 'b, R, K, V, S> MultiHashMapInlet<'a, 'b, R, K, V, S>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + Clone + 'static,
+          S: Send + Sync + BuildHasher + Clone + 'static,
           'a: 'b
 {
-    fn with_hash_state(parent: &'b MultiAggregator<'a, R, K, V, S>,
+    fn with_hasher(parent: &'b MultiAggregator<'a, R, K, V, S>,
                        size: usize,
                        reducer: &'a R,
                        i: usize,
@@ -322,7 +321,7 @@ impl<'a, 'b, R, K, V, S> MultiHashMapInlet<'a, 'b, R, K, V, S>
         Box::new(MultiHashMapInlet {
             parent: parent,
             hashmaps: (0..size)
-                          .map(|_| HashMap::with_hash_state(s.clone()))
+                          .map(|_| HashMap::with_hasher(s.clone()))
                           .collect(),
             reducer: reducer,
             i: i,
@@ -334,7 +333,7 @@ impl<'a, 'b, R, K, V, S> Inlet<R, K, V> for MultiHashMapInlet<'a, 'b, R, K, V, S
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static,
+          S: Send + Sync + BuildHasher + 'static,
           'a: 'b
 {
     fn push_one(&mut self, k: K, v: V) {
@@ -347,7 +346,7 @@ impl<'a, 'b, R, V, K, S> Drop for MultiHashMapInlet<'a, 'b, R, K, V, S>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static,
+          S: Send + Sync + BuildHasher + 'static,
           'a: 'b
 {
     fn drop(&mut self) {
@@ -362,7 +361,7 @@ pub fn update_hashmap<'h, 'r, R, K, V, S>(hash: &'h mut HashMap<K, V, S>,
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,
           V: Send + 'static,
-          S: Send + Sync + HashState + 'static
+          S: Send + Sync + BuildHasher + 'static
 {
     let val = hash.entry(k);
     match val {

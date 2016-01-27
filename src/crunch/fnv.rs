@@ -3,9 +3,9 @@ use fnv::FnvHasher;
 #[derive(Clone)]
 pub struct FnvState;
 
-impl ::std::collections::hash_state::HashState for FnvState {
+impl ::std::hash::BuildHasher for FnvState {
     type Hasher = FnvHasher;
-    fn hasher(&self) -> FnvHasher {
+    fn build_hasher(&self) -> FnvHasher {
         FnvHasher::default()
     }
 }
