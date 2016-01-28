@@ -76,24 +76,19 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
     {
         let mapper = &self.mapper;
         let monitor = self.monitor.clone();
-        {
-            let each = |(i, it): (usize, BI<A>)| {
-                {
-                    let mut inlet = aggregator.create_inlet(i);
-                    for e in it.map(|e| mapper(e)) {
-                        inlet.push(e)
-                    }
+        let mut pool = Pool::new(self.workers);
+        let each = |(i, it): (usize, BI<A>)| {
+            {
+                let mut inlet = aggregator.create_inlet(i);
+                for e in it.map(|e| mapper(e)) {
+                    inlet.push(e)
                 }
-                if let Some(ref mon) = monitor {
-                    mon.add_progress(1)
-                }
-            };
-            let mut pool = Pool::new(self.workers);
-            unsafe {
-                pool.map(chunks.enumerate(), &each).count();
             }
-
-        }
+            if let Some(ref mon) = monitor {
+                mon.add_progress(1)
+            }
+        };
+        pool.for_(chunks.enumerate(), &each);
     }
 
     pub fn new_map_reduce(map: M) -> MapOp<'a, M, A, K, V> {
@@ -145,7 +140,7 @@ pub fn map_par_reduce<'a, M, R, A, K, V>(map: M,
     aggregator.as_inner()
 }
 
-
+/*
 pub struct FilterCountOp<'a, M, A>
     where M: Sync + Fn(A) -> bool,
           A: Send
@@ -200,3 +195,4 @@ pub fn par_foreach<A, F>(chunks: BI<BI<A>>, func: &F)
     let mut pool = Pool::new(1 + ::num_cpus::get());
     let _: Vec<()> = unsafe { pool.map(chunks, &each).collect() };
 }
+*/

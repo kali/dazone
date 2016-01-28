@@ -5,7 +5,7 @@ authors = ["Mathieu Poumeyrol <kali@zoy.org>"]
 
 [dependencies]
 glob = "*"
-simple_parallel = "0.2"
+simple_parallel = "0.3"
 num_cpus = "0.2.6"
 #flate2 = "0.2.7"
 scan_fmt = "*"
