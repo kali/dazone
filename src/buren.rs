@@ -46,7 +46,7 @@ impl ser::Serializer for Serializer {
         let s = &mut self.streams[self.index];
         self.index += 1;
         try!(s.write_u64::<LittleEndian>(value.len() as u64));
-        try!(s.write(value.as_bytes()));
+        try!(s.write_all(value.as_bytes()));
         Ok(())
     }
     fn visit_unit(&mut self) -> Result<(), Self::Error> {
