@@ -112,8 +112,8 @@ pub fn get_memory_usage() -> Result<ResourceUsage> {
         resident_size_max: 1024 * rusage.ru_maxrss as u64,
         user_time: rusage.ru_utime.tv_sec as f64 + rusage.ru_utime.tv_usec as f64 / 1_000_000f64,
         system_time: rusage.ru_stime.tv_sec as f64 + rusage.ru_stime.tv_usec as f64 / 1_000_000f64,
-        min_fault: rusage.ru_minflt,
-        maj_fault: rusage.ru_majflt,
+        minor_fault: rusage.ru_minflt as u64,
+        major_fault: rusage.ru_majflt as u64,
     })
 }
 
