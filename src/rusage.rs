@@ -21,6 +21,8 @@ pub struct ResourceUsage {
     pub resident_size_max: u64,
     pub user_time: f64,
     pub system_time: f64,
+    pub minor_fault: u64,
+    pub major_fault: u64,
 }
 
 #[cfg(target_os="macos")]
@@ -91,6 +93,8 @@ pub fn get_memory_usage() -> Result<ResourceUsage> {
         resident_size_max: info.resident_size_max,
         user_time: rusage.ru_utime.tv_sec as f64 + rusage.ru_utime.tv_usec as f64 / 1_000_000f64,
         system_time: rusage.ru_stime.tv_sec as f64 + rusage.ru_stime.tv_usec as f64 / 1_000_000f64,
+        minor_fault: rusage.ru_minflt as u64,
+        major_fault: rusage.ru_majflt as u64,
     })
 }
 
@@ -108,6 +112,8 @@ pub fn get_memory_usage() -> Result<ResourceUsage> {
         resident_size_max: 1024 * rusage.ru_maxrss as u64,
         user_time: rusage.ru_utime.tv_sec as f64 + rusage.ru_utime.tv_usec as f64 / 1_000_000f64,
         system_time: rusage.ru_stime.tv_sec as f64 + rusage.ru_stime.tv_usec as f64 / 1_000_000f64,
+        min_fault: rusage.ru_minflt,
+        maj_fault: rusage.ru_majflt,
     })
 }
 
@@ -160,13 +166,14 @@ impl Monitor {
                 let now = interval * step;
                 let usage = get_memory_usage().unwrap();
                 write!(buffed,
-                       "{:7.3} {:4} {:10} {:2} {:8.3} {:8.3}\n",
+                       "{:7.3} {:4} {:10} {:2} {:8.3} {:8.3} {:10} {:10}\n",
                        now.num_milliseconds() as f32 / 1000f32,
                        monitor_to_go.progress.load(Relaxed),
                        usage.resident_size,
                        cpus,
                        usage.user_time,
                        usage.system_time,
+                       usage.minor_fault, usage.major_fault,
                        )
                     .unwrap();
                 buffed.flush().unwrap();
