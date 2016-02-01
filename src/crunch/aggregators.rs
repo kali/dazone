@@ -321,7 +321,7 @@ impl<'a, 'b, R, K, V, S> MultiHashMapInlet<'a, 'b, R, K, V, S>
         Box::new(MultiHashMapInlet {
             parent: parent,
             hashmaps: (0..size)
-                          .map(|_| HashMap::with_hasher(s.clone()))
+                          .map(|_| HashMap::with_capacity_and_hasher(1000, s.clone()))
                           .collect(),
             reducer: reducer,
             i: i,
