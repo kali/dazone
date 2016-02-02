@@ -6,6 +6,8 @@ use std::sync::Mutex;
 
 use super::{Aggregator, Inlet};
 
+use super::BI;
+
 // ************************** HashMap Aggregator *****************************
 
 pub struct HashMapAggregator<'a, R, K, V, S>
@@ -115,13 +117,15 @@ trait MultiAggregator<'a, R,K,V, S>
 
     fn partition(&self, k: &K) -> usize;
 
+    /*
     fn merge<'b>(&self, inlet: &mut MultiHashMapInlet<'a, 'b, R, K, V, S>) {
         for (i, mut partial) in inlet.hashmaps.drain(..).enumerate() {
             self.update_partition(i, partial.drain())
         }
     }
-
     fn update_partition(&self, partition: usize, kvs: ::std::collections::hash_map::Drain<K, V>);
+*/
+    fn update_partition(&self, partition: usize, kvs: BI<(K, V)>);
 }
 
 // ************************** MultiHashMap Aggregator *************************
@@ -135,6 +139,7 @@ pub struct MultiHashMapAggregator<'a, R, K, V, S>
     hashmaps: Vec<Mutex<HashMap<K, V, S>>>,
     reducer: &'a R,
     partitioner: S,
+    partial_aggregation: bool
 }
 
 impl<'a, R, K, V> MultiHashMapAggregator<'a, R, K, V, RandomState>
@@ -166,8 +171,13 @@ impl<'a, R, K, V, S> MultiHashMapAggregator<'a, R, K, V, S>
                               .collect(),
                 reducer: reducer,
                 partitioner: s,
+                partial_aggregation: false
             }
         }
+    }
+
+    pub fn with_partial_aggregation(self, value: bool) -> MultiHashMapAggregator<'a, R,K,V,S> {
+        MultiHashMapAggregator { partial_aggregation: value, ..self }
     }
 
     pub fn as_inner(self) -> Vec<HashMap<K, V, S>> {
@@ -182,7 +192,7 @@ impl<'a, R, K, V, S, H> MultiAggregator<'a, R, K, V, S> for MultiHashMapAggregat
           S: Send + Sync + BuildHasher<Hasher = H> + Clone + 'static,
           H: Hasher
 {
-    fn update_partition(&self, partition: usize, kvs: ::std::collections::hash_map::Drain<K, V>) {
+    fn update_partition(&self, partition: usize, kvs: BI<(K, V)>) {
         let mut locked = self.hashmaps[partition].lock().unwrap();
         for (k, v) in kvs {
             update_hashmap(&mut locked, self.reducer, k, v);
@@ -203,11 +213,15 @@ impl<'a, R, K, V, S> Aggregator<'a, R, K, V> for MultiHashMapAggregator<'a, R, K
           S: Send + Sync + BuildHasher + Clone + 'static
 {
     fn create_inlet<'b>(&'b self, i: usize) -> Box<Inlet<R, K, V> + 'b> {
-        MultiHashMapInlet::with_hasher(self,
-                                           self.hashmaps.len(),
-                                           self.reducer,
-                                           i,
-                                           self.partitioner.clone())
+        if self.partial_aggregation {
+            MultiHashMapInlet::with_hasher(self,
+                                               self.hashmaps.len(),
+                                               self.reducer,
+                                               i,
+                                               self.partitioner.clone())
+        } else {
+            MultiVecInlet::new(self, self.hashmaps.len(), i)
+        }
     }
     fn len(&self) -> u64 {
         self.hashmaps.iter().map(|h| h.lock().unwrap().len() as u64).sum()
@@ -252,7 +266,7 @@ impl<'a, R, K, V, S> MultiAggregator<'a, R, K, V, S> for MultiTrieAggregator<'a,
           S: Send + Sync + BuildHasher + 'static,
           V: Send + 'static
 {
-    fn update_partition(&self, partition: usize, kvs: ::std::collections::hash_map::Drain<K, V>) {
+    fn update_partition(&self, partition: usize, kvs: BI<(K, V)>) {
         let mut locked = self.tries[partition].lock().unwrap();
         for (k, v) in kvs {
             let found = locked.get_mut(&k).is_some();
@@ -350,7 +364,72 @@ impl<'a, 'b, R, V, K, S> Drop for MultiHashMapInlet<'a, 'b, R, K, V, S>
           'a: 'b
 {
     fn drop(&mut self) {
-        self.parent.merge(self)
+        for (i, mut partial) in self.hashmaps.drain(..).enumerate() {
+            self.parent.update_partition(i, Box::new(partial.drain()))
+        }
+    }
+}
+
+// ************************** MultiVec Inlet *************************
+
+struct MultiVecInlet<'a, 'b, R, K, V, S>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Hash + 'static,
+          V: Send + 'static,
+          S: Send + Sync + BuildHasher + 'static,
+          'a: 'b
+{
+    parent: &'b MultiAggregator<'a, R, K, V, S>,
+    vecs: Vec<Vec<(K, V)>>,
+    #[allow(dead_code)]
+    i: usize,
+}
+
+impl<'a, 'b, R, K, V, S> MultiVecInlet<'a, 'b, R, K, V, S>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Hash + 'static,
+          V: Send + 'static,
+          S: Send + Sync + BuildHasher + Clone + 'static,
+          'a: 'b
+{
+    fn new(parent: &'b MultiAggregator<'a, R, K, V, S>,
+                       size: usize,
+                       i: usize)
+                       -> Box<Inlet<R, K, V> + 'b> {
+        Box::new(MultiVecInlet {
+            parent: parent,
+            vecs: (0..size)
+                          .map(|_| Vec::new())
+                          .collect(),
+            i: i,
+        })
+    }
+}
+
+impl<'a, 'b, R, K, V, S> Inlet<R, K, V> for MultiVecInlet<'a, 'b, R, K, V, S>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Hash + 'static,
+          V: Send + 'static,
+          S: Send + Sync + BuildHasher + 'static,
+          'a: 'b
+{
+    fn push_one(&mut self, k: K, v: V) {
+        let partial: usize = self.parent.partition(&k);
+        self.vecs[partial].push((k,v));
+    }
+}
+
+impl<'a, 'b, R, V, K, S> Drop for MultiVecInlet<'a, 'b, R, K, V, S>
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Hash + 'static,
+          V: Send + 'static,
+          S: Send + Sync + BuildHasher + 'static,
+          'a: 'b
+{
+    fn drop(&mut self) {
+        for (i, mut partial) in self.vecs.drain(..).enumerate() {
+            self.parent.update_partition(i, Box::new(partial.drain(..)))
+        }
     }
 }
 

@@ -35,6 +35,7 @@ fn main() {
                          (@arg CHUNKS: -c --chunks +takes_value "all")
                          (@arg KEY_LENGTH: -k --key_length +takes_value "(8, 9, 10, 11, 12)")
                          (@arg REDUCE: -r --reduce +takes_value "(hash, hashes, tries, timely)")
+                         (@arg PARTIAL: -p --partial "activate partial aggregation")
                          (@arg BUCKETS: -b --buckets +takes_value "reduce buckets (256)")
                          (@arg MONITOR: -m --monitor +takes_value "monitor resouce usage")
                          (@arg WORKERS: -w --workers +takes_value "worker threads (num_cpu*2)")
@@ -53,6 +54,7 @@ fn main() {
         input: matches.value_of("INPUT").unwrap_or("cap").to_string(),
         chunks: matches.value_of("CHUNKS").unwrap_or("999999999").parse().unwrap(),
         strategy: matches.value_of("REDUCE").unwrap_or("hashes").to_string(),
+        partial: matches.is_present("PARTIAL"),
         workers: matches.value_of("WORKERS")
                         .map(|a| a.parse::<usize>().unwrap())
                         .unwrap_or(::num_cpus::get() * 2),
@@ -101,6 +103,7 @@ struct Runner {
     input: String,
     chunks: usize,
     strategy: String,
+    partial: bool,
     workers: usize,
     buckets: usize,
     // progress: bool,
@@ -230,7 +233,8 @@ impl Runner {
             }
             "hashes" => {
                 let mut aggregator =
-                        ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hasher(&r, self.buckets, dazone::crunch::fnv::FnvState);
+                        ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hasher(&r, self.buckets, dazone::crunch::fnv::FnvState)
+                        .with_partial_aggregation(self.partial);
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
                     .with_monitor(self.monitor.clone())
                     .with_workers(self.workers)
@@ -253,7 +257,6 @@ impl Runner {
         println!("groups: {}", groups);
     }
 
-    #[rustfmt_skip]
     fn run_timely<K>(self)
         where K: ShortBytesArray
     {
