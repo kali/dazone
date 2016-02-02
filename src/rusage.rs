@@ -150,11 +150,14 @@ pub fn get_rusage() -> rusage {
 
 #[derive(Debug,Default)]
 pub struct Monitor {
+    pub target: sync::atomic::AtomicUsize,
     pub progress: sync::atomic::AtomicUsize,
 }
 
 impl Monitor {
-    pub fn new<W:Write+Send+'static>(interval:time::Duration, write:W) -> sync::Arc<Monitor> {
+    pub fn new<W: Write + Send + 'static>(interval: time::Duration,
+                                          write: W)
+                                          -> sync::Arc<Monitor> {
         use std::sync::atomic::Ordering::Relaxed;
         let monitor = sync::Arc::new(Monitor::default());
         let monitor_to_go = monitor.clone();
@@ -166,10 +169,10 @@ impl Monitor {
                 let now = interval * step;
                 let usage = get_memory_usage().unwrap();
                 write!(buffed,
-                       "{:7.3} {:4} {:10} {:2} {:8.3} {:8.3} {:10} {:10}\n",
+                       "{:7.3} {:4} {:4} {:10} {:10} {:2} {:8.3} {:8.3} {:10} {:10}\n",
                        now.num_milliseconds() as f32 / 1000f32,
-                       monitor_to_go.progress.load(Relaxed),
-                       usage.resident_size,
+                       monitor_to_go.progress.load(Relaxed), monitor_to_go.target.load(Relaxed),
+                       usage.resident_size, usage.virtual_size,
                        cpus,
                        usage.user_time,
                        usage.system_time,
@@ -184,11 +187,11 @@ impl Monitor {
         monitor
     }
 
-    pub fn set_progress(&self, progress:usize) {
+    pub fn set_progress(&self, progress: usize) {
         self.progress.store(progress, sync::atomic::Ordering::Relaxed);
     }
 
-    pub fn add_progress(&self, progress:usize) {
+    pub fn add_progress(&self, progress: usize) {
         self.progress.fetch_add(progress, sync::atomic::Ordering::Relaxed);
     }
 }

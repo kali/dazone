@@ -112,6 +112,22 @@ struct Runner {
     monitor: Option<Arc<Monitor>>,
 }
 
+struct Sigil<T> {
+    monitor: Option<Arc<Monitor>>,
+    phantom: ::std::marker::PhantomData<T>,
+}
+
+impl<T> Iterator for Sigil<T> {
+    type Item=T;
+    fn next(&mut self) -> Option<T> {
+        for m in self.monitor.as_ref() {
+            m.add_progress(1);
+        }
+        None
+    }
+}
+
+
 impl Runner {
     fn run<K>(self)
         where K: ShortBytesArray
@@ -221,6 +237,9 @@ impl Runner {
     {
         let r = |a: &f32, b: &f32| a + b;
         let bibi = self.sharded_input::<K>(0, 1);
+        for m in self.monitor.as_ref() {
+            m.target.fetch_add(bibi.size_hint().1.unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
+        }
         let groups = match &*self.strategy {
             "hash" => {
                 let mut aggregator = ::dazone::crunch::aggregators::HashMapAggregator::new(&r);
@@ -298,10 +317,14 @@ impl Runner {
             let index = root.index();
             let peers = root.peers();
             let bibi = self.sharded_input::<K>(index, peers);
+            for m in self.monitor.as_ref() {
+                m.target.fetch_add(bibi.size_hint().1.unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
+            }
+            let monitor = self.monitor.clone();
 
             root.scoped::<u64, _, _>(move |builder| {
 
-                let uservisits = bibi.flat_map(|f| f).to_stream(builder);
+                let uservisits = bibi.flat_map(move |f| f.chain(Sigil { monitor: monitor.clone(), phantom: ::std::marker::PhantomData })).to_stream(builder);
 
                 let group_count = uservisits.unary_notify(
                     Exchange::new(move |x: &(K, f32)| {
