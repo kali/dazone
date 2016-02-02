@@ -21,6 +21,7 @@ use timely::dataflow::channels::pact::Exchange;
 use capnp::serialize::OwnedSegments;
 use capnp::message::Reader;
 
+use dazone::crunch::aggregators::update_hashmap;
 
 use std::hash::Hasher;
 use std::collections::HashMap;
@@ -143,7 +144,8 @@ impl Runner {
                          }))
         } else if self.input.starts_with("buren") {
             let compressor = dazone::files::compressor::Compressor::for_format(&*self.input);
-            Box::new(dazone::files::files_for_format(&*self.set, "uservisits", &*self.input).into_iter()
+            Box::new(dazone::files::files_for_format(&*self.set, "uservisits", &*self.input)
+                         .into_iter()
                          .take(self.chunks)
                          .enumerate()
                          .filter_map(move |(i, f)| {
@@ -154,11 +156,16 @@ impl Runner {
                              }
                          })
                          .map(move |file| -> BI<(K, f32)> {
-                             let reader = dazone::buren::PartialDeserializer::new(file, compressor, &[0,3]);
-                             Box::new(reader.map(|pair:(String,f32)| (K::prefix(&*pair.0), pair.1)))
+                             let reader = dazone::buren::PartialDeserializer::new(file,
+                                                                                  compressor,
+                                                                                  &[0, 3]);
+                             Box::new(reader.map(|pair: (String, f32)| {
+                                 (K::prefix(&*pair.0), pair.1)
+                             }))
                          }))
         } else if self.input == "mcap" {
-            Box::new(dazone::files::files_for_format(&*self.set, "uservisits", &*self.input).into_iter()
+            Box::new(dazone::files::files_for_format(&*self.set, "uservisits", &*self.input)
+                         .into_iter()
                          .take(self.chunks)
                          .enumerate()
                          .filter_map(move |(i, f)| {
@@ -246,6 +253,7 @@ impl Runner {
         println!("groups: {}", groups);
     }
 
+    #[rustfmt_skip]
     fn run_timely<K>(self)
         where K: ShortBytesArray
     {
@@ -287,72 +295,52 @@ impl Runner {
             let index = root.index();
             let peers = root.peers();
             let bibi = self.sharded_input::<K>(index, peers);
-            println!("worker:{}/{} start", index, peers);
 
             root.scoped::<u64, _, _>(move |builder| {
 
-                    let uservisits = bibi.flat_map(|f| f).to_stream(builder);
+                let uservisits = bibi.flat_map(|f| f).to_stream(builder);
 
-                    let group_count =
-                        uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
-                            ::dazone::hash(&(x.0)) as u64
-                        }),
-                        "groupby-map",
-                        vec![],
-                        move |input, output, notif| {
-                            while let Some((time, data)) = input.next() {
-                                notif.notify_at(time);
-                                for (k, v) in data.drain(..) {
-                                    dazone::crunch::aggregators::update_hashmap(&mut hashmap,
-                                                                                &|a, b| {
-                                                                                    a + b
-                                                                                },
-                                                                                k,
-                                                                                v);
-                                }
+                let group_count = uservisits.unary_notify(
+                    Exchange::new(move |x: &(K, f32)| {
+                      ::dazone::hash(&(x.0)) as u64
+                    }),
+                    "groupby-map",
+                    vec![],
+                    move |input, output, notif| {
+                        while let Some((time, data)) = input.next() {
+                            notif.notify_at(time);
+                            for (k, v) in data.drain(..) {
+                                update_hashmap(&mut hashmap, &|a, b| a + b, k, v);
                             }
-                            while let Some((iter, _)) = notif.next() {
-                                if hashmap.len() > 0 {
-                                    println!("worker {} map done, contributing ({})", index, hashmap.len());
-                                    output.session(&iter).give(hashmap.len());
-                                    hashmap.clear();
-                                }
+                        }
+                        while let Some((iter, _)) = notif.next() {
+                            if hashmap.len() > 0 {
+                                output.session(&iter).give(hashmap.len());
+                                hashmap.clear();
                             }
-                        });
+                        }
+                    });
 
-                    let _count: Stream<_, ()> = group_count.unary_notify(Exchange::new(|_| 0u64),
+                let _count: Stream<_, ()> = group_count.unary_notify(
+                    Exchange::new(|_| 0u64),
                     "count",
                     vec![],
                     move |input, _, notify| {
-                        while let Some((time,
-                                        data)) =
-                            input.next() {
-                                notify.notify_at(time);
-                                println!("worker {} \
-                                                                                       receiving \
-                                                                                       {} counts ",
-                                                                                       index,
-                                                                                       data.len());
-                                for x in
-                                    data.drain(..) {
-                                        sum += x;
-                                    }
+                        while let Some((time, data)) = input.next() {
+                            notify.notify_at(time);
+                            for x in data.drain(..) {
+                                sum += x;
                             }
+                        }
                         notify.for_each(|_, _| {
                             if sum > 0 {
-                                println!("XXXX w\
-                                                                                           orker:\
-                                                                                           {} gro\
-                                                                                           ups:{} \
-                                                                                           XXXX",
-                                                                                           index,
-                                                                                           sum);
+                                println!("XXXX worker: {} groups:{} XXXX", index, sum);
                                 sum = 0;
                             }
                         })
                     });
 
-                });
+            });
 
             while root.step() {
             }
