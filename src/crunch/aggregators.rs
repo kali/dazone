@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::collections::hash_map::{Entry, RandomState};
 use std::hash::{Hash, Hasher, BuildHasher};
 use radix_trie::{Trie, TrieKey};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use rusage::Monitor;
 
 use super::{Aggregator, Inlet};
 
@@ -18,6 +19,7 @@ pub struct HashMapAggregator<'a, R, K, V, S>
 {
     pub hashmap: Mutex<HashMap<K, V, S>>,
     pub reducer: &'a R,
+    pub monitor: Option<Arc<Monitor>>
 }
 
 impl<'a, R, K, V> HashMapAggregator<'a, R, K, V, RandomState>
@@ -28,6 +30,7 @@ impl<'a, R, K, V> HashMapAggregator<'a, R, K, V, RandomState>
     pub fn new(reducer: &'a R) -> HashMapAggregator<'a, R, K, V, RandomState> {
         HashMapAggregator::with_hasher(reducer, RandomState::default())
     }
+
 }
 
 impl<'a, R, K, V, S> HashMapAggregator<'a, R, K, V, S>
@@ -41,12 +44,19 @@ impl<'a, R, K, V, S> HashMapAggregator<'a, R, K, V, S>
             HashMapAggregator {
                 hashmap: Mutex::new(HashMap::with_hasher(s)),
                 reducer: reducer,
+                monitor: None,
             }
         }
     }
+
+    pub fn with_monitor(self, monitor: Option<Arc<Monitor>>) -> HashMapAggregator<'a,R,K,V,S> {
+        HashMapAggregator { monitor:monitor, ..self }
+    }
+
     pub fn as_inner(self) -> HashMap<K, V, S> {
         self.hashmap.into_inner().unwrap()
     }
+
 }
 
 impl<'a, R, K, V, S> Aggregator<'a, R, K, V> for HashMapAggregator<'a, R, K, V, S>
@@ -139,7 +149,8 @@ pub struct MultiHashMapAggregator<'a, R, K, V, S>
     hashmaps: Vec<Mutex<HashMap<K, V, S>>>,
     reducer: &'a R,
     partitioner: S,
-    partial_aggregation: bool
+    partial_aggregation: bool,
+    monitor: Option<Arc<Monitor>>
 }
 
 impl<'a, R, K, V> MultiHashMapAggregator<'a, R, K, V, RandomState>
@@ -171,14 +182,20 @@ impl<'a, R, K, V, S> MultiHashMapAggregator<'a, R, K, V, S>
                               .collect(),
                 reducer: reducer,
                 partitioner: s,
-                partial_aggregation: false
+                partial_aggregation: false,
+                monitor: None
             }
         }
+    }
+
+    pub fn with_monitor(self, monitor: Option<Arc<Monitor>>) -> MultiHashMapAggregator<'a,R,K,V,S> {
+        MultiHashMapAggregator { monitor:monitor, ..self }
     }
 
     pub fn with_partial_aggregation(self, value: bool) -> MultiHashMapAggregator<'a, R,K,V,S> {
         MultiHashMapAggregator { partial_aggregation: value, ..self }
     }
+
 
     pub fn as_inner(self) -> Vec<HashMap<K, V, S>> {
         self.hashmaps.into_iter().map(|m| m.into_inner().unwrap()).collect()
@@ -193,9 +210,19 @@ impl<'a, R, K, V, S, H> MultiAggregator<'a, R, K, V, S> for MultiHashMapAggregat
           H: Hasher
 {
     fn update_partition(&self, partition: usize, kvs: BI<(K, V)>) {
-        let mut locked = self.hashmaps[partition].lock().unwrap();
-        for (k, v) in kvs {
-            update_hashmap(&mut locked, self.reducer, k, v);
+        for m in self.monitor.as_ref() {
+            m.add_partial_aggreg(kvs.size_hint().1.unwrap_or(0));
+        }
+        let diff = {
+            let mut locked = self.hashmaps[partition].lock().unwrap();
+            let before = locked.len();
+            for (k, v) in kvs {
+                update_hashmap(&mut locked, self.reducer, k, v);
+            };
+            locked.len() - before
+        };
+        for m in self.monitor.as_ref() {
+            m.add_aggreg(diff);
         }
     }
 
@@ -239,6 +266,8 @@ pub struct MultiTrieAggregator<'a, R, K, V>
 {
     tries: Vec<Mutex<Trie<K, V>>>,
     reducer: &'a R,
+    partial_aggregation: bool,
+    monitor: Option<Arc<Monitor>>
 }
 
 impl<'a, R, K, V> MultiTrieAggregator<'a, R, K, V>
@@ -251,8 +280,14 @@ impl<'a, R, K, V> MultiTrieAggregator<'a, R, K, V>
             MultiTrieAggregator {
                 tries: (0..partitions).map(|_| Mutex::new(Trie::new())).collect(),
                 reducer: reducer,
+                partial_aggregation: false,
+                monitor: None
             }
         }
+    }
+
+    pub fn with_monitor(self, monitor: Option<Arc<Monitor>>) -> MultiTrieAggregator<'a,R,K,V> {
+        MultiTrieAggregator { monitor:monitor, ..self }
     }
 
     pub fn as_inner(self) -> Vec<Trie<K, V>> {
@@ -267,15 +302,25 @@ impl<'a, R, K, V, S> MultiAggregator<'a, R, K, V, S> for MultiTrieAggregator<'a,
           V: Send + 'static
 {
     fn update_partition(&self, partition: usize, kvs: BI<(K, V)>) {
-        let mut locked = self.tries[partition].lock().unwrap();
-        for (k, v) in kvs {
-            let found = locked.get_mut(&k).is_some();
-            let after = if found {
-                (self.reducer)(&locked.remove(&k).unwrap(), &v)
-            } else {
-                v
-            };
-            locked.insert(k, after);
+        for m in self.monitor.as_ref() {
+            m.add_partial_aggreg(kvs.size_hint().1.unwrap_or(0));
+        }
+        let diff = {
+            let mut locked = self.tries[partition].lock().unwrap();
+            let before = locked.len();
+            for (k, v) in kvs {
+                let found = locked.get_mut(&k).is_some();
+                let after = if found {
+                    (self.reducer)(&locked.remove(&k).unwrap(), &v)
+                } else {
+                    v
+                };
+                locked.insert(k, after);
+            }
+            locked.len() - before
+        };
+        for m in self.monitor.as_ref() {
+            m.add_aggreg(diff);
         }
     }
 

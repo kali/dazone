@@ -61,6 +61,7 @@ pub struct MapOp<'a, M, A, K, V>
     _phantom: ::std::marker::PhantomData<A>,
     _phantom_2: ::std::marker::PhantomData<&'a usize>,
     workers: usize,
+    #[allow(dead_code)]
     monitor: Option<Arc<::rusage::Monitor>>
 }
 
@@ -75,7 +76,6 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
               R: Sync + Fn(&V, &V) -> V + 'static
     {
         let mapper = &self.mapper;
-        let monitor = self.monitor.clone();
         let mut pool = Pool::new(self.workers);
         let each = |(i, it): (usize, BI<A>)| {
             {
@@ -83,9 +83,6 @@ impl<'a, M, A, K, V> MapOp<'a, M, A, K, V>
                 for e in it.map(|e| mapper(e)) {
                     inlet.push(e)
                 }
-            }
-            if let Some(ref mon) = monitor {
-                mon.add_progress(1)
             }
         };
         pool.for_(chunks.enumerate(), &each);

@@ -41,17 +41,27 @@ fn main() {
                          (@arg WORKERS: -w --workers +takes_value "worker threads (num_cpu*2)")
                          (@arg HOSTS: -h --hosts +takes_value "hosts, coma sep (for timely)")
                          (@arg ME: --me +takes_value "my position in hosts (starting at 0)")
+                         (@arg PROGRESS_BAR: --pb "show progress bar")
                        );
     let matches = app.get_matches();
 
+
+    let set = matches.value_of("SET").unwrap_or("5nodes").to_string();
+    let input = matches.value_of("INPUT").unwrap_or("cap").to_string();
+
     let monitor: Option<Arc<Monitor>> = matches.value_of("MONITOR").map(|f| {
         Monitor::new(time::Duration::seconds(1),
-                     ::std::fs::File::create(f).unwrap())
+                     ::std::fs::File::create(f).unwrap(),
+                     ::dazone::files::files_for_format(&*set, "uservisits", &*input)
+                         .size_hint()
+                         .1
+                         .unwrap_or(0),
+                     matches.is_present("PROGRESS_BAR"))
     });
 
     let runner = Runner {
-        set: matches.value_of("SET").unwrap_or("5nodes").to_string(),
-        input: matches.value_of("INPUT").unwrap_or("cap").to_string(),
+        set: set,
+        input: input,
         chunks: matches.value_of("CHUNKS").unwrap_or("999999999").parse().unwrap(),
         strategy: matches.value_of("REDUCE").unwrap_or("hashes").to_string(),
         partial: matches.is_present("PARTIAL"),
@@ -112,24 +122,43 @@ struct Runner {
     monitor: Option<Arc<Monitor>>,
 }
 
-struct Sigil<T> {
+struct Sigil<I: Iterator<Item = T>, T> {
     monitor: Option<Arc<Monitor>>,
-    phantom: ::std::marker::PhantomData<T>,
+    count: usize,
+    inner: I,
 }
 
-impl<T> Iterator for Sigil<T> {
-    type Item=T;
-    fn next(&mut self) -> Option<T> {
-        for m in self.monitor.as_ref() {
-            m.add_progress(1);
+impl<I: Iterator<Item = T>, T> Sigil<I, T> {
+    fn new(it: I, mon: Option<Arc<Monitor>>) -> Sigil<I, T> {
+        Sigil {
+            monitor: mon,
+            count: 0,
+            inner: it,
         }
-        None
     }
 }
 
+impl<I: Iterator<Item = T>, T> Iterator for Sigil<I, T> {
+    type Item=T;
+    fn next(&mut self) -> Option<T> {
+        match self.inner.next() {
+            Some(item) => {
+                self.count += 1;
+                Some(item)
+            }
+            None => {
+                for m in self.monitor.as_ref() {
+                    m.add_progress(1);
+                    m.add_read(self.count);
+                }
+                None
+            }
+        }
+    }
+}
 
 impl Runner {
-    fn run<K>(self)
+    fn run<K>(mut self)
         where K: ShortBytesArray
     {
         if self.strategy == "timely" {
@@ -139,110 +168,97 @@ impl Runner {
         }
     }
 
+    fn shard<T: 'static + Send, I: Iterator<Item = T> + 'static + Send>
+        (&self,
+         it: I,
+         index: usize,
+         peers: usize)
+         -> Box<Iterator<Item = T> + 'static + Send> {
+        Box::new(it.take(self.chunks)
+                   .enumerate()
+                   .filter_map(move |(i, f)| {
+                       if i % peers == index {
+                           Some(f)
+                       } else {
+                           None
+                       }
+                   }))
+    }
+
     fn sharded_input<'a, K>(&self, index: usize, peers: usize) -> BI<'a, BI<'a, (K, f32)>>
         where K: ShortBytesArray
     {
+        let monitor = self.monitor.clone();
         if self.input.starts_with("cap") || self.input.starts_with("pcap") {
-            Box::new(dazone::files::bibi_cap(&*self.set, "uservisits", &*self.input)
-                         .take(self.chunks)
-                         .enumerate()
-                         .filter_map(move |(i, f)| {
-                             if i % peers == index {
-                                 Some(f)
-                             } else {
-                                 None
-                             }
-                         })
+            Box::new(self.shard(dazone::files::bibi_cap(&*self.set, "uservisits", &*self.input),
+                                index,
+                                peers)
                          .map(move |chunk| -> BI<(K, f32)> {
-                             Box::new(chunk.map(move |reader: Reader<OwnedSegments>| {
-                                 let visit: cap::user_visits::Reader = reader.get_root()
-                                                                             .unwrap();
-                                 (K::prefix(visit.get_source_i_p().unwrap()),
-                                  visit.get_ad_revenue())
-                             }))
+                             Box::new(Sigil::new(chunk.map(move |reader: Reader<OwnedSegments>| {
+                                                     let visit: cap::user_visits::Reader =
+                                                         reader.get_root()
+                                                               .unwrap();
+                                                     (K::prefix(visit.get_source_i_p().unwrap()),
+                                                      visit.get_ad_revenue())
+                                                 }),
+                                                 monitor.clone()))
                          }))
         } else if self.input.starts_with("buren") {
             let compressor = dazone::files::compressor::Compressor::for_format(&*self.input);
-            Box::new(dazone::files::files_for_format(&*self.set, "uservisits", &*self.input)
-                         .into_iter()
-                         .take(self.chunks)
-                         .enumerate()
-                         .filter_map(move |(i, f)| {
-                             if i % peers == index {
-                                 Some(f)
-                             } else {
-                                 None
-                             }
-                         })
+            Box::new(self.shard(dazone::files::files_for_format(&*self.set,
+                                                                "uservisits",
+                                                                &*self.input),
+                                index,
+                                peers)
                          .map(move |file| -> BI<(K, f32)> {
                              let reader = dazone::buren::PartialDeserializer::new(file,
                                                                                   compressor,
                                                                                   &[0, 3]);
-                             Box::new(reader.map(|pair: (String, f32)| {
-                                 (K::prefix(&*pair.0), pair.1)
-                             }))
+                             Box::new(Sigil::new(reader.map(|pair: (String, f32)| {
+                                                     (K::prefix(&*pair.0), pair.1)
+                                                 }),
+                                                 monitor.clone()))
                          }))
         } else if self.input == "mcap" {
-            Box::new(dazone::files::files_for_format(&*self.set, "uservisits", &*self.input)
-                         .into_iter()
-                         .take(self.chunks)
-                         .enumerate()
-                         .filter_map(move |(i, f)| {
-                             if i % peers == index {
-                                 Some(f)
-                             } else {
-                                 None
-                             }
-                         })
+            Box::new(self.shard(dazone::files::files_for_format(&*self.set,
+                                                                "uservisits",
+                                                                &*self.input),
+                                index,
+                                peers)
                          .map(move |file| -> BI<(K, f32)> {
-                             Box::new(dazone::files::cap::MmapReader::new(file))
+                             Box::new(Sigil::new(dazone::files::cap::MmapReader::new(file),
+                                                 monitor.clone()))
                          }))
         } else if self.input.starts_with("pbuf") {
-            Box::new(dazone::files::bibi_pbuf(&*self.set, "uservisits", &*self.input)
-                         .take(self.chunks)
-                         .enumerate()
-                         .filter_map(move |(i, f)| {
-                             if i % peers == index {
-                                 Some(f)
-                             } else {
-                                 None
-                             }
-                         })
+            Box::new(self.shard(dazone::files::bibi_pbuf(&*self.set, "uservisits", &*self.input),
+                                index,
+                                peers)
                          .map(move |chunk| -> BI<(K, f32)> {
-                             Box::new(chunk.map(move |visit: ::dazone::data::pbuf::UserVisits| {
+                             Box::new(Sigil::new(chunk.map(move |visit: ::dazone::data::pbuf::UserVisits| {
                                  (K::prefix(visit.get_sourceIP()), visit.get_adRevenue())
-                             }))
+                             }), monitor.clone()))
                          }))
         } else {
-            Box::new(dazone::files::bibi_pod(&*self.set, "uservisits", &*self.input)
-                         .take(self.chunks)
-                         .enumerate()
-                         .filter_map(move |(i, f)| {
-                             if i % peers == index {
-                                 Some(f)
-                             } else {
-                                 None
-                             }
-                         })
+            Box::new(self.shard(dazone::files::bibi_pod(&*self.set, "uservisits", &*self.input),
+                                index,
+                                peers)
                          .map(move |chunk| -> BI<(K, f32)> {
-                             Box::new(chunk.map(move |visit: ::dazone::data::pod::UserVisits| {
+                             Box::new(Sigil::new(chunk.map(move |visit: ::dazone::data::pod::UserVisits| {
                                  (K::prefix(&*visit.source_ip), visit.ad_revenue)
-                             }))
+                             }),monitor.clone()))
                          }))
         }
     }
 
-    fn run_standalone<K>(&self)
+    fn run_standalone<K>(&mut self)
         where K: ShortBytesArray
     {
         let r = |a: &f32, b: &f32| a + b;
         let bibi = self.sharded_input::<K>(0, 1);
-        for m in self.monitor.as_ref() {
-            m.target.fetch_add(bibi.size_hint().1.unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
-        }
         let groups = match &*self.strategy {
             "hash" => {
-                let mut aggregator = ::dazone::crunch::aggregators::HashMapAggregator::new(&r);
+                let mut aggregator = ::dazone::crunch::aggregators::HashMapAggregator::new(&r)
+                                         .with_monitor(self.monitor.clone());
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
                     .with_monitor(self.monitor.clone())
                     .with_workers(self.workers)
@@ -253,6 +269,7 @@ impl Runner {
             "hashes" => {
                 let mut aggregator =
                         ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hasher(&r, self.buckets, dazone::crunch::fnv::FnvState)
+                        .with_monitor(self.monitor.clone())
                         .with_partial_aggregation(self.partial);
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
                     .with_monitor(self.monitor.clone())
@@ -263,7 +280,8 @@ impl Runner {
             }
             "tries" => {
                 let mut aggregator =
-                    ::dazone::crunch::aggregators::MultiTrieAggregator::new(&r, self.buckets);
+                    ::dazone::crunch::aggregators::MultiTrieAggregator::new(&r, self.buckets)
+                        .with_monitor(self.monitor.clone());
                 MapOp::new_map_reduce(|(a, b): (K, f32)| Emit::One(a.to_vec(), b))
                     .with_monitor(self.monitor.clone())
                     .with_workers(self.workers)
@@ -318,53 +336,74 @@ impl Runner {
             let peers = root.peers();
             let bibi = self.sharded_input::<K>(index, peers);
             for m in self.monitor.as_ref() {
-                m.target.fetch_add(bibi.size_hint().1.unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
+                m.target.fetch_add(bibi.size_hint().1.unwrap_or(0),
+                                   std::sync::atomic::Ordering::Relaxed);
             }
             let monitor = self.monitor.clone();
-
             root.scoped::<u64, _, _>(move |builder| {
 
-                let uservisits = bibi.flat_map(move |f| f.chain(Sigil { monitor: monitor.clone(), phantom: ::std::marker::PhantomData })).to_stream(builder);
+                let uservisits = bibi.flat_map(move |inner| inner).to_stream(builder);
 
-                let group_count = uservisits.unary_notify(
-                    Exchange::new(move |x: &(K, f32)| {
-                      ::dazone::hash(&(x.0)) as u64
-                    }),
-                    "groupby-map",
-                    vec![],
-                    move |input, output, notif| {
-                        while let Some((time, data)) = input.next() {
-                            notif.notify_at(time);
-                            for (k, v) in data.drain(..) {
-                                update_hashmap(&mut hashmap, &|a, b| a + b, k, v);
-                            }
-                        }
-                        while let Some((iter, _)) = notif.next() {
-                            if hashmap.len() > 0 {
-                                output.session(&iter).give(hashmap.len());
-                                hashmap.clear();
-                            }
-                        }
-                    });
+                let group_count = uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
+                                                              ::dazone::hash(&(x.0)) as u64
+                                                          }),
+                                                          "groupby-map",
+                                                          vec![],
+                                                          move |input, output, notif| {
+                                                              while let Some((time, data)) =
+                                                                        input.next() {
+                                                                  notif.notify_at(time);
+                                                                  for m in monitor.as_ref() {
+                                                                      m.add_partial_aggreg(data.len());
+                                                                  }
+                                                                  let before = hashmap.len();
+                                                                  for (k, v) in data.drain(..) {
+                                                                      update_hashmap(&mut hashmap,
+                                                                                     &|a, b| a + b,
+                                                                                     k,
+                                                                                     v);
+                                                                  }
+                                                                  for m in monitor.as_ref() {
+                                                                      m.add_aggreg(hashmap.len() -
+                                                                                   before);
+                                                                  }
+                                                              }
+                                                              while let Some((iter, _)) =
+                                                                        notif.next() {
+                                                                  if hashmap.len() > 0 {
+                                                                      output.session(&iter)
+                                                                            .give(hashmap.len());
+                                                                      hashmap.clear();
+                                                                  }
+                                                              }
+                                                          });
 
-                let _count: Stream<_, ()> = group_count.unary_notify(
-                    Exchange::new(|_| 0u64),
-                    "count",
-                    vec![],
-                    move |input, _, notify| {
-                        while let Some((time, data)) = input.next() {
-                            notify.notify_at(time);
-                            for x in data.drain(..) {
-                                sum += x;
-                            }
-                        }
-                        notify.for_each(|_, _| {
-                            if sum > 0 {
-                                println!("XXXX worker: {} groups:{} XXXX", index, sum);
-                                sum = 0;
-                            }
-                        })
-                    });
+                let _count: Stream<_, ()> = group_count.unary_notify(Exchange::new(|_| 0u64),
+                                                                     "count",
+                                                                     vec![],
+                                                                     move |input, _, notify| {
+                                                                         while let Some((time,
+                                                                                         data)) =
+                                                                                   input.next() {
+                                                                             notify.notify_at(time);
+                                                                             for x in
+                                                                                 data.drain(..) {
+                                                                                 sum += x;
+                                                                             }
+                                                                         }
+                                                                         notify.for_each(|_, _| {
+                                                                             if sum > 0 {
+                                                                                 println!("XXXX w\
+                                                                                           orker: \
+                                                                                           {} gro\
+                                                                                           ups:{} \
+                                                                                           XXXX",
+                                                                                          index,
+                                                                                          sum);
+                                                                                 sum = 0;
+                                                                             }
+                                                                         })
+                                                                     });
 
             });
 

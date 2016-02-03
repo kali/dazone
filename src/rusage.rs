@@ -4,6 +4,12 @@ use libc::{getrusage, RUSAGE_SELF, rusage, timeval};
 use std::time::Duration;
 use time;
 use std::sync;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering::Relaxed;
+
+use libc::{c_char, c_void, c_int};
+
+use pbr::ProgressBar;
 
 quick_error! {
     #[derive(Debug)]
@@ -148,18 +154,36 @@ pub fn get_rusage() -> rusage {
     usage
 }
 
+extern "C" {
+    pub fn je_mallctl(name: *const c_char,
+                      oldp: *const c_void,
+                      oldlenp: *mut i64,
+                      newp: *const c_int,
+                      newlen: i64);
+}
+
 #[derive(Debug,Default)]
 pub struct Monitor {
-    pub target: sync::atomic::AtomicUsize,
-    pub progress: sync::atomic::AtomicUsize,
+    pub target: AtomicUsize,
+    pub progress: AtomicUsize,
+    pub read: AtomicUsize,
+    pub partial_aggreg: AtomicUsize,
+    pub aggreg: AtomicUsize,
+    pub progress_bar: Option<sync::Mutex<ProgressBar>>,
 }
 
 impl Monitor {
     pub fn new<W: Write + Send + 'static>(interval: time::Duration,
-                                          write: W)
+                                          write: W,
+                                          target: usize,
+                                          progress_bar: bool)
                                           -> sync::Arc<Monitor> {
-        use std::sync::atomic::Ordering::Relaxed;
-        let monitor = sync::Arc::new(Monitor::default());
+        let mut monitor = Monitor::default();
+        monitor.target.store(target, Relaxed);
+        if progress_bar {
+            monitor.progress_bar = Some(sync::Mutex::new(ProgressBar::new(target)));
+        };
+        let monitor = sync::Arc::new(monitor);
         let monitor_to_go = monitor.clone();
         let cpus = ::num_cpus::get();
         ::std::thread::spawn(move || {
@@ -168,16 +192,68 @@ impl Monitor {
             for step in 0.. {
                 let now = interval * step;
                 let usage = get_memory_usage().unwrap();
+                let allocated = 0i64;
+                let active = 0i64;
+                let metadata = 0i64;
+                let resident = 0i64;
+                let mapped = 0i64;
+                unsafe {
+                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                    let epoch: i64 = step as i64;
+                    je_mallctl("epoch\0".as_ptr() as *const i8,
+                               ::std::mem::transmute(&epoch),
+                               ::std::mem::transmute(&size),
+                               ::std::mem::transmute(&epoch),
+                               size);
+                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                    je_mallctl("stats.allocated\0".as_ptr() as *const i8,
+                               ::std::mem::transmute(&allocated),
+                               ::std::mem::transmute(&size),
+                               ::std::ptr::null(),
+                               0i64);
+                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                    je_mallctl("stats.active\0".as_ptr() as *const i8,
+                               ::std::mem::transmute(&active),
+                               ::std::mem::transmute(&size),
+                               ::std::ptr::null(),
+                               0i64);
+                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                    je_mallctl("stats.metadata\0".as_ptr() as *const i8,
+                               ::std::mem::transmute(&metadata),
+                               ::std::mem::transmute(&size),
+                               ::std::ptr::null(),
+                               0i64);
+                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                    je_mallctl("stats.resident\0".as_ptr() as *const i8,
+                               ::std::mem::transmute(&resident),
+                               ::std::mem::transmute(&size),
+                               ::std::ptr::null(),
+                               0i64);
+                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                    je_mallctl("stats.mapped\0".as_ptr() as *const i8,
+                               ::std::mem::transmute(&mapped),
+                               ::std::mem::transmute(&size),
+                               ::std::ptr::null(),
+                               0i64);
+                };
                 write!(buffed,
-                       "{:7.3} {:4} {:4} {:10} {:10} {:2} {:8.3} {:8.3} {:10} {:10}\n",
+                       "{:7.3} {:4} {:4} {:10} {:10} {:2} {:8.3} {:8.3} {:10} {:10} | {:10} \
+                        {:10} {:10} {:10} {:10} | {:10} {:10} {:10}\n",
                        now.num_milliseconds() as f32 / 1000f32,
-                       monitor_to_go.progress.load(Relaxed), monitor_to_go.target.load(Relaxed),
-                       usage.resident_size, usage.virtual_size,
+                       monitor_to_go.progress.load(Relaxed),
+                       monitor_to_go.target.load(Relaxed),
+                       usage.resident_size,
+                       usage.virtual_size,
                        cpus,
                        usage.user_time,
                        usage.system_time,
-                       usage.minor_fault, usage.major_fault,
-                       )
+                       usage.minor_fault,
+                       usage.major_fault,
+                       allocated,
+                       active,
+                       metadata,
+                       resident,
+                       mapped, monitor_to_go.read.load(Relaxed), monitor_to_go.partial_aggreg.load(Relaxed), monitor_to_go.aggreg.load(Relaxed))
                     .unwrap();
                 buffed.flush().unwrap();
                 let delay = started + now + interval - time::get_time();
@@ -187,12 +263,23 @@ impl Monitor {
         monitor
     }
 
-    pub fn set_progress(&self, progress: usize) {
-        self.progress.store(progress, sync::atomic::Ordering::Relaxed);
+    pub fn add_progress(&self, progress: usize) {
+        self.progress.fetch_add(progress, Relaxed);
+        for pb in self.progress_bar.as_ref() {
+            pb.lock().unwrap().add(progress);
+        }
     }
 
-    pub fn add_progress(&self, progress: usize) {
-        self.progress.fetch_add(progress, sync::atomic::Ordering::Relaxed);
+    pub fn add_read(&self, progress: usize) {
+        self.read.fetch_add(progress, Relaxed);
+    }
+
+    pub fn add_partial_aggreg(&self, progress: usize) {
+        self.partial_aggreg.fetch_add(progress, Relaxed);
+    }
+
+    pub fn add_aggreg(&self, progress: usize) {
+        self.aggreg.fetch_add(progress, Relaxed);
     }
 }
 
