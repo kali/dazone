@@ -1,0 +1,63 @@
+---
+- hosts: all
+  user: ubuntu
+  tasks:
+    - name: Install list of packages
+      apt: name={{item}} state=installed
+      with_items: ['build-essential', 'git', 'jshon', 'libsnappy-dev', 'parallel' ]
+      become: true
+    - name: install rust
+      shell: |
+        curl -sf https://raw.githubusercontent.com/brson/multirust/master/blastoff.sh | sh -- --yes ;
+        multirust default nightly
+      args:
+        creates: .multirust
+    - name: install capnproto
+      shell: |
+        curl -O https://capnproto.org/capnproto-c++-0.5.3.tar.gz
+        tar zxf capnproto-c++-0.5.3.tar.gz
+        cd capnproto-c++-0.5.3
+        ./configure
+        make -j6 check
+        sudo make install
+      args:
+        creates: capnproto-c++-0.5.3
+    - git: repo=ssh://git@github.com/kali/dazone.git dest=dazone accept_hostkey=True
+    - name: install pip
+      shell: |
+        curl https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+        python /tmp/get-pip.py
+      become: true
+      args:
+        creates: /usr/local/bin/pip
+    - name: install awscli toolkit
+      command: pip install awscli
+      become: true
+      args:
+        creates: /usr/local/bin/aws
+    - name: build dazone
+      command: cargo build --release chdir=./dazone
+    - file: path=dazone/data state=directory mode=0755
+    - name: download data
+      shell: |
+        SET=5nodes
+        TABLE=uservisits
+        for file in `seq -f "%06.f" 0 20`
+        do
+          aws s3 cp s3://big-data-benchmark/pavlo/text-deflate/$SET/$TABLE/${file}_0.deflate \
+            dazone/data/text-deflate/$SET/$TABLE/${file}_0.deflate
+        done
+      args:
+        creates: dazone/data/text-deflate/5nodes/uservisits/
+    - name: repack data
+      command: ./target/release/pack uservisits buren-snz
+      args:
+        chdir: dazone
+        creates: data/buren-snz/5nodes/uservisits
+    - name: generate hosts
+      copy:
+        dest: ./hosts
+        content: |
+          {% for host in groups['all'] %}
+            {{ hostvars[host]['ansible_eth0']['ipv4']['address'] }}
+          {% endfor %}
