@@ -92,7 +92,7 @@ fn main() {
     let usage = ::dazone::rusage::get_rusage();
     let vmsize = ::dazone::rusage::get_memory_usage().unwrap().virtual_size;
     println!("set: {:6} chunks: {:4} length: {:2} strat: {:6} buckets: {:4} workers: {:4} \
-              rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:5}",
+              rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:.03}",
              &*runner.set,
              runner.chunks,
              length,
@@ -103,7 +103,7 @@ fn main() {
              vmsize / 1024 / 1024,
              usage.ru_utime.tv_sec,
              usage.ru_stime.tv_sec,
-             (t2 - t1).num_seconds());
+             (t2 - t1).num_milliseconds()*1000);
 
 }
 
