@@ -26,7 +26,7 @@ use rustc_serialize::{Encodable, Decodable};
 
 use dazone::Dx16Result;
 use dazone::data;
-use dazone::data::cap::{ Capitanable, Mode };
+use dazone::data::cap::{Capitanable, Mode};
 use dazone::data::pbuf::Protobufable;
 use serde::Serialize;
 
@@ -50,21 +50,26 @@ fn main() {
                                .index(2)
                                .required(true)
                                .help("cap-gz or rmp-gz"))
+                      .arg(Arg::with_name("PROGRESSBAR")
+                               .required(false)
+                               .long("pb")
+                               .help("activate progressbar"))
                       .get_matches();
     let set = matches.value_of("SET").unwrap_or("5nodes");
     let table = matches.value_of("TABLE").unwrap();
     let dst = matches.value_of("FORMAT").unwrap();
+    let pb = matches.is_present("PROGRESSBAR");
     if dst == "text-deflate" {
         panic!("text-deflate can not be used as the output format!");
     }
     match &*table {
-        "rankings" => loop_files::<data::pod::Ranking>(set, "rankings", &*dst).unwrap(),
-        "uservisits" => loop_files::<data::pod::UserVisits>(set, "uservisits", &*dst).unwrap(),
+        "rankings" => loop_files::<data::pod::Ranking>(set, "rankings", &*dst, pb).unwrap(),
+        "uservisits" => loop_files::<data::pod::UserVisits>(set, "uservisits", &*dst, pb).unwrap(),
         t => panic!("unknwon table {}", &*t),
     }
 }
 
-fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
+fn loop_files<T>(set: &str, table: &str, dst: &str, show_pb:bool) -> Dx16Result<()>
     where T: Decodable + Encodable + Capitanable + Debug + Protobufable + Serialize
 {
     let source_root = dazone::files::data_dir_for("text-deflate", set, table);
@@ -172,7 +177,9 @@ fn loop_files<T>(set: &str, table: &str, dst: &str) -> Dx16Result<()>
             }
             any => panic!("unknown format {}", any),
         }
-        pb.lock().unwrap().inc();
+        if show_pb {
+            pb.lock().unwrap().inc();
+        }
     };
     pool.for_(jobs, &task);
     Ok(())
