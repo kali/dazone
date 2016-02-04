@@ -103,7 +103,7 @@ fn main() {
              vmsize / 1024 / 1024,
              usage.ru_utime.tv_sec,
              usage.ru_stime.tv_sec,
-             (t2 - t1).num_milliseconds()*1000);
+             (t2 - t1).num_milliseconds() as f32 / 1000.0);
 
 }
 
