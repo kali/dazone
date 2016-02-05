@@ -253,6 +253,21 @@ impl Runner {
         }
     }
 
+    fn run_standalone_hashes<K,S>(&self, bibi:BI<BI<(K,f32)>> ,hasher:S) -> u64
+          where K: Send + Eq + ::std::hash::Hash + 'static,
+          S: Send + Sync + ::std::hash::BuildHasher + 'static + Clone {
+        let r = |a: &f32, b: &f32| a + b;
+        let mut aggregator =
+                ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hasher(&r, self.buckets, hasher)
+                .with_monitor(self.monitor.clone())
+                .with_partial_aggregation(self.partial);
+        MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
+            .with_monitor(self.monitor.clone())
+            .with_workers(self.workers)
+            .run(bibi, &mut aggregator);
+        aggregator.converge();
+        aggregator.len()
+    }
 
     fn run_standalone<K>(&mut self)
         where K: ShortBytesArray
@@ -270,19 +285,11 @@ impl Runner {
                 aggregator.converge();
                 aggregator.len()
             }
-            "hashes" => {
-                let hasher = ::dazone::crunch::fnv::FnvState;
-                let mut aggregator =
-                        ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hasher(&r, self.buckets, hasher)
-                        .with_monitor(self.monitor.clone())
-                        .with_partial_aggregation(self.partial);
-                MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
-                    .with_monitor(self.monitor.clone())
-                    .with_workers(self.workers)
-                    .run(bibi, &mut aggregator);
-                aggregator.converge();
-                aggregator.len()
-            }
+            "hashes" => if self.sip {
+                self.run_standalone_hashes(bibi, std::collections::hash_map::RandomState::new())
+            } else {
+                self.run_standalone_hashes(bibi, ::dazone::crunch::fnv::FnvState)
+            },
             "tries" => {
                 let mut aggregator =
                     ::dazone::crunch::aggregators::MultiTrieAggregator::new(&r, self.buckets)
