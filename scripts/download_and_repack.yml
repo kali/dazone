@@ -1,0 +1,35 @@
+---
+
+- hosts: all
+  user: ubuntu
+  tasks:
+    - name: download data
+      shell: |
+        export SET=5nodes
+        export TABLE=uservisits
+        doit() {
+          file=$1
+          if [ ! -f dazone/data/text-deflate/$SET/$TABLE/${file}_0.deflate ]
+          then
+            for i in 1 2 3 4 5
+            do
+              aws s3 cp --quiet s3://big-data-benchmark/pavlo/text-deflate/$SET/$TABLE/${file}_0.deflate \
+                  dazone/data/text-deflate/$SET/$TABLE/${file}_0.deflate.tmp && \
+                  mv dazone/data/text-deflate/$SET/$TABLE/${file}_0.deflate.tmp dazone/data/text-deflate/$SET/$TABLE/${file}_0.deflate && \
+                  break
+              sleep 5
+            done
+          fi
+        }
+        export -f doit
+
+        parallel -j 20 doit ::: `seq -f "%06.f" 0 2037` && echo download ok && \
+        touch dazone/data/text-deflate/5nodes/uservisits/ok
+      args:
+        executable: /bin/bash
+        creates: dazone/data/text-deflate/5nodes/uservisits/ok
+    - name: repack data
+      command: ./target/release/pack uservisits buren-snz
+      args:
+        chdir: dazone
+        creates: data/buren-snz/5nodes/uservisits

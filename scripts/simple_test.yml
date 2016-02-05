@@ -1,0 +1,37 @@
+---
+
+- hosts: all
+  user: ubuntu
+  tasks:
+    - name: simple disk bandwidth probe
+      command: hdparm -Tt /dev/md0
+      register: hdparm
+      become: true
+    - debug: var=hdparm.stdout_lines
+    - name: purge
+      shell: sync && echo 3 > /proc/sys/vm/drop_caches
+      become: true
+    - name: query2A
+      command: ./target/release/query2 -i buren-snz
+      register: query2A
+      args:
+        chdir: dazone
+    - debug: var=query2A.stdout_lines
+    - name: purge
+      shell: sync && echo 3 > /proc/sys/vm/drop_caches
+      become: true
+    - name: query2B
+      command: ./target/release/query2 -i buren-snz -k 10
+      register: query2B
+      args:
+        chdir: dazone
+    - debug: var=query2B.stdout_lines
+    - name: purge
+      shell: sync && echo 3 > /proc/sys/vm/drop_caches
+      become: true
+    - name: query2C
+      command: ./target/release/query2 -i buren-snz -k 12
+      register: query2C
+      args:
+        chdir: dazone
+    - debug: var=query2C.stdout_lines

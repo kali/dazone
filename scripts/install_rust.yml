@@ -1,14 +1,35 @@
 ---
+
 - hosts: all
   user: ubuntu
   tasks:
     - name: Install list of packages
       apt: name={{item}} state=installed
-      with_items: ['build-essential', 'git', 'jshon', 'libsnappy-dev', 'parallel' ]
+      with_items: ['build-essential', 'git', 'jshon', 'libsnappy-dev', 'mdadm', 'parallel', 'pv' ]
+      become: true
+    - name: discard /dev/xvdb mount
+      mount: src=/dev/xvdb state=absent name=/mnt fstype=auto
+      become: true
+    - name: unmount /dev/xvdb
+      mount: src=/dev/xvdb state=unmounted name=/mnt fstype=auto
+      become: true
+    - name: setup raid md0
+      shell: |
+        disks=`lsblk | grep xvd | grep disk | grep -v xvda | cut -f 1 -d " " | sed 's/xvd/\/dev\/xvd/g'`
+        disks_count=`lsblk | grep xvd | grep disk | grep -v xvda | wc -l`
+        yes | mdadm --create /dev/md0 --raid-devices=$disks_count --level=stripe $disks && \
+        mkfs.ext4 /dev/md0
+      args:
+        creates: /dev/md0
+      become: true
+    - name: mount /dev/md0
+      mount: src=/dev/md0 state=mounted name=/data fstype=auto
       become: true
     - name: install rust
       shell: |
-        curl -sf https://raw.githubusercontent.com/brson/multirust/master/blastoff.sh | sh -- --yes ;
+        curl -sf https://raw.githubusercontent.com/brson/multirust/master/blastoff.sh > blastoff.sh
+        sh blastoff.sh --yes
+        rm blastoff.sh
         multirust default nightly
       args:
         creates: .multirust
@@ -21,7 +42,7 @@
         make -j6 check
         sudo make install
       args:
-        creates: capnproto-c++-0.5.3
+        creates: /usr/local/bin/capnpc
     - git: repo=ssh://git@github.com/kali/dazone.git dest=dazone accept_hostkey=True
     - name: install pip
       shell: |
@@ -37,27 +58,15 @@
         creates: /usr/local/bin/aws
     - name: build dazone
       command: cargo build --release chdir=./dazone
-    - file: path=dazone/data state=directory mode=0755
-    - name: download data
-      shell: |
-        SET=5nodes
-        TABLE=uservisits
-        for file in `seq -f "%06.f" 0 20`
-        do
-          aws s3 cp s3://big-data-benchmark/pavlo/text-deflate/$SET/$TABLE/${file}_0.deflate \
-            dazone/data/text-deflate/$SET/$TABLE/${file}_0.deflate
-        done
-      args:
-        creates: dazone/data/text-deflate/5nodes/uservisits/
-    - name: repack data
-      command: ./target/release/pack uservisits buren-snz
-      args:
-        chdir: dazone
-        creates: data/buren-snz/5nodes/uservisits
-    - name: generate hosts
-      copy:
-        dest: ./hosts
-        content: |
-          {% for host in groups['all'] %}
-            {{ hostvars[host]['ansible_eth0']['ipv4']['address'] }}
-          {% endfor %}
+    - name: create /data/dazone
+      file: path=/data/dazone state=directory mode=0755 owner=ubuntu
+      become: true
+    - name: symlink data to data
+      file: path=dazone/data state=link src=/data/dazone
+  #    - name: generate hosts
+  #      copy:
+  #        dest: ./hosts
+  #        content: |
+  #          {% for host in groups['all'] %}
+  #            {{ hostvars[host]['ansible_eth0']['ipv4']['address'] }}
+  #          {% endfor %}
