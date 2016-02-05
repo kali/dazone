@@ -35,7 +35,7 @@ fn main() {
                          (@arg CHUNKS: -c --chunks +takes_value "all")
                          (@arg KEY_LENGTH: -k --key_length +takes_value "(8, 9, 10, 11, 12)")
                          (@arg REDUCE: -r --reduce +takes_value "(hash, hashes, tries, timely)")
-                         (@arg SIP: --sip +takes_value "(use SIP hasher)")
+                         (@arg SIP: --sip "(use SIP hasher)")
                          (@arg BUCKETS: -b --buckets +takes_value "reduce buckets (256)")
                          (@arg PARTIAL: -p --partial "activate partial aggregation")
                          (@arg MONITOR: -m --monitor +takes_value "monitor resouce usage")
