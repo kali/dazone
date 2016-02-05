@@ -35,8 +35,9 @@ fn main() {
                          (@arg CHUNKS: -c --chunks +takes_value "all")
                          (@arg KEY_LENGTH: -k --key_length +takes_value "(8, 9, 10, 11, 12)")
                          (@arg REDUCE: -r --reduce +takes_value "(hash, hashes, tries, timely)")
-                         (@arg PARTIAL: -p --partial "activate partial aggregation")
+                         (@arg SIP: --sip +takes_value "(use SIP hasher)")
                          (@arg BUCKETS: -b --buckets +takes_value "reduce buckets (256)")
+                         (@arg PARTIAL: -p --partial "activate partial aggregation")
                          (@arg MONITOR: -m --monitor +takes_value "monitor resouce usage")
                          (@arg WORKERS: -w --workers +takes_value "worker threads (num_cpu*2)")
                          (@arg HOSTS: -h --hosts +takes_value "hosts, coma sep (for timely)")
@@ -64,11 +65,12 @@ fn main() {
         input: input,
         chunks: matches.value_of("CHUNKS").unwrap_or("999999999").parse().unwrap(),
         strategy: matches.value_of("REDUCE").unwrap_or("hashes").to_string(),
+        sip: matches.is_present("SIP"),
         partial: matches.is_present("PARTIAL"),
         workers: matches.value_of("WORKERS")
                         .map(|a| a.parse::<usize>().unwrap())
                         .unwrap_or(::num_cpus::get() * 2),
-        buckets: matches.value_of("BUCKETS").unwrap_or("256").parse().unwrap(),
+        buckets: matches.value_of("BUCKETS").unwrap_or("257").parse().unwrap(),
         hosts: matches.value_of("HOSTS").map(|x| x.to_string()),
         me: matches.value_of("ME").map(|x| x.parse().unwrap()),
         monitor: monitor,
@@ -113,6 +115,7 @@ struct Runner {
     input: String,
     chunks: usize,
     strategy: String,
+    sip: bool,
     partial: bool,
     workers: usize,
     buckets: usize,
@@ -250,6 +253,7 @@ impl Runner {
         }
     }
 
+
     fn run_standalone<K>(&mut self)
         where K: ShortBytesArray
     {
@@ -267,8 +271,9 @@ impl Runner {
                 aggregator.len()
             }
             "hashes" => {
+                let hasher = ::dazone::crunch::fnv::FnvState;
                 let mut aggregator =
-                        ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hasher(&r, self.buckets, dazone::crunch::fnv::FnvState)
+                        ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hasher(&r, self.buckets, hasher)
                         .with_monitor(self.monitor.clone())
                         .with_partial_aggregation(self.partial);
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
