@@ -63,7 +63,7 @@ fn main() {
     let runner = Runner {
         set: set,
         input: input,
-        chunks: matches.value_of("CHUNKS").unwrap_or("999999999").parse().unwrap(),
+        chunks: matches.value_of("CHUNKS").map(|x| x.parse().unwrap()),
         strategy: matches.value_of("REDUCE").unwrap_or("hashes").to_string(),
         sip: matches.is_present("SIP"),
         partial: matches.is_present("PARTIAL"),
@@ -93,12 +93,13 @@ fn main() {
 
     let usage = ::dazone::rusage::get_rusage();
     let vmsize = ::dazone::rusage::get_memory_usage().unwrap().virtual_size;
-    println!("set: {:6} chunks: {:4} length: {:2} strat: {:6} buckets: {:4} workers: {:4} \
+    println!("set: {:6} chunks: {:4} length: {:2} strat: {:6} sip: {:?} buckets: {:4} workers: {:4} \
               rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:.03}",
              &*runner.set,
-             runner.chunks,
+             runner.chunks.unwrap_or(0),
              length,
              &*runner.strategy,
+             runner.sip,
              runner.buckets,
              runner.workers,
              usage.ru_maxrss / 1024 / 1024,
@@ -113,7 +114,7 @@ fn main() {
 struct Runner {
     set: String,
     input: String,
-    chunks: usize,
+    chunks: Option<usize>,
     strategy: String,
     sip: bool,
     partial: bool,
@@ -177,7 +178,7 @@ impl Runner {
          index: usize,
          peers: usize)
          -> Box<Iterator<Item = T> + 'static + Send> {
-        Box::new(it.take(self.chunks)
+        Box::new(it.take(self.chunks.unwrap_or(99999999))
                    .enumerate()
                    .filter_map(move |(i, f)| {
                        if i % peers == index {
