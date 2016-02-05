@@ -70,7 +70,7 @@ fn main() {
         workers: matches.value_of("WORKERS")
                         .map(|a| a.parse::<usize>().unwrap())
                         .unwrap_or(::num_cpus::get() * 2),
-        buckets: matches.value_of("BUCKETS").unwrap_or("257").parse().unwrap(),
+        buckets: matches.value_of("BUCKETS").unwrap_or("256").parse().unwrap(),
         hosts: matches.value_of("HOSTS").map(|x| x.to_string()),
         me: matches.value_of("ME").map(|x| x.parse().unwrap()),
         monitor: monitor,

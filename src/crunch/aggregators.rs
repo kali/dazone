@@ -228,6 +228,7 @@ impl<'a, R, K, V, S, H> MultiAggregator<'a, R, K, V, S> for MultiHashMapAggregat
 
     fn partition(&self, k: &K) -> usize {
         let mut s: H = self.partitioner.build_hasher();
+        "noiz".hash(&mut s);
         k.hash(&mut s);
         s.finish() as usize % self.hashmaps.len()
     }
