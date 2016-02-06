@@ -4,21 +4,19 @@
   user: ubuntu
   tasks:
     - name: simple disk bandwidth probe
-      command: hdparm -Tt /dev/md0
-      register: hdparm
+      shell: hdparm -Tt /dev/md0
       become: true
+      register: hdparm
     - debug: var=hdparm.stdout_lines
 
-    - block:
-      - name: purge
-        shell: sync && echo 3 > /proc/sys/vm/drop_caches
-        become: true
-      - name: query2
-        shell: ./target/release/query2 -i buren-snz -k {{ item[0] }} -r {{ item[1] }} | tee -a ~/output
-        register: query
-        args:
-          chdir: dazone
-      - debug: var=query.stdout_lines
+    - name: query2
+      shell: |
+        sudo sh -c "echo 3 > /proc/sys/vm/drop_caches"
+        ./target/release/query2 -i buren-snz -r {{ item[0] }} -k {{ item[1] }} >> ~/output
+      args:
+        chdir: dazone
       with_nested:
         - [ "hashes", "timely" ]
         - [ 8, 10, 12 ]
+      register: query2
+    - debug: var=query2

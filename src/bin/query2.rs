@@ -91,8 +91,9 @@ fn main() {
 
     let usage = ::dazone::rusage::get_rusage();
     let vmsize = ::dazone::rusage::get_memory_usage().unwrap().virtual_size;
-    println!("set: {:6} chunks: {:4} length: {:2} strat: {:6} sip: {:?} buckets: {:4} workers: {:4} \
-              rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:.03} groups: {:12}",
+    println!("set: {:6} chunks: {:4} length: {:2} strat: {:6} sip: {:?} buckets: {:4} workers: \
+              {:4} rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:.03} \
+              groups: {:12}",
              &*runner.set,
              runner.chunks.unwrap_or(0),
              length,
@@ -234,8 +235,8 @@ impl Runner {
                          }))
         } else if self.input.starts_with("pbuf") {
             Box::new(self.shard(dazone::files::bibi_pbuf(&*self.set, "uservisits", &*self.input),
-                                index,
-                                peers)
+                index,
+                peers)
                          .map(move |chunk| -> BI<(K, f32)> {
                              Box::new(Sigil::new(chunk.map(move |visit: ::dazone::data::pbuf::UserVisits| {
                                  (K::prefix(visit.get_sourceIP()), visit.get_adRevenue())
@@ -243,8 +244,8 @@ impl Runner {
                          }))
         } else {
             Box::new(self.shard(dazone::files::bibi_pod(&*self.set, "uservisits", &*self.input),
-                                index,
-                                peers)
+                index,
+                peers)
                          .map(move |chunk| -> BI<(K, f32)> {
                              Box::new(Sigil::new(chunk.map(move |visit: ::dazone::data::pod::UserVisits| {
                                  (K::prefix(&*visit.source_ip), visit.ad_revenue)
@@ -253,12 +254,15 @@ impl Runner {
         }
     }
 
-    fn run_standalone_hashes<K,S>(&self, bibi:BI<BI<(K,f32)>> ,hasher:S) -> usize
-          where K: Send + Eq + ::std::hash::Hash + 'static,
-          S: Send + Sync + ::std::hash::BuildHasher + 'static + Clone {
+    fn run_standalone_hashes<K, S>(&self, bibi: BI<BI<(K, f32)>>, hasher: S) -> usize
+        where K: Send + Eq + ::std::hash::Hash + 'static,
+              S: Send + Sync + ::std::hash::BuildHasher + 'static + Clone
+    {
         let r = |a: &f32, b: &f32| a + b;
         let mut aggregator =
-                ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hasher(&r, self.buckets, hasher)
+            ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hasher(&r,
+                                                                               self.buckets,
+                                                                               hasher)
                 .with_monitor(self.monitor.clone())
                 .with_partial_aggregation(self.partial);
         MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
@@ -285,11 +289,13 @@ impl Runner {
                 aggregator.converge();
                 aggregator.len() as usize
             }
-            "hashes" => if self.sip {
-                self.run_standalone_hashes(bibi, std::collections::hash_map::RandomState::new())
-            } else {
-                self.run_standalone_hashes(bibi, ::dazone::crunch::fnv::FnvState)
-            },
+            "hashes" => {
+                if self.sip {
+                    self.run_standalone_hashes(bibi, std::collections::hash_map::RandomState::new())
+                } else {
+                    self.run_standalone_hashes(bibi, ::dazone::crunch::fnv::FnvState)
+                }
+            }
             "tries" => {
                 let mut aggregator =
                     ::dazone::crunch::aggregators::MultiTrieAggregator::new(&r, self.buckets)
@@ -339,6 +345,7 @@ impl Runner {
         let result_to_go = result.clone();
 
         timely::execute(conf, move |root| {
+            let result_to_go = result_to_go.clone();
             let mut hashmap = HashMap::new();
             let mut sum = 0usize;
             let index = root.index();
@@ -350,42 +357,41 @@ impl Runner {
             }
             let monitor = self.monitor.clone();
             root.scoped::<u64, _, _>(move |builder| {
+                let result_to_go = result_to_go.clone();
 
                 let uservisits = bibi.flat_map(move |inner| inner).to_stream(builder);
 
-                let group_count = uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
-                                                              ::dazone::hash(&(x.0)) as u64
-                                                          }),
-                                                          "groupby-map",
-                                                          vec![],
-                                                          move |input, output, notif| {
-                                                              while let Some((time, data)) =
-                                                                        input.next() {
-                                                                  notif.notify_at(time);
-                                                                  for m in monitor.as_ref() {
-                                                                      m.add_partial_aggreg(data.len());
-                                                                  }
-                                                                  let before = hashmap.len();
-                                                                  for (k, v) in data.drain(..) {
-                                                                      update_hashmap(&mut hashmap,
-                                                                                     &|a, b| a + b,
-                                                                                     k,
-                                                                                     v);
-                                                                  }
-                                                                  for m in monitor.as_ref() {
-                                                                      m.add_aggreg(hashmap.len() -
-                                                                                   before);
-                                                                  }
-                                                              }
-                                                              while let Some((iter, _)) =
-                                                                        notif.next() {
-                                                                  if hashmap.len() > 0 {
-                                                                      output.session(&iter)
-                                                                            .give(hashmap.len());
-                                                                      hashmap.clear();
-                                                                  }
-                                                              }
-                                                          });
+                let group_count =
+                    uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
+                                                ::dazone::hash(&(x.0)) as u64
+                                            }),
+                                            "groupby-map",
+                                            vec![],
+                                            move |input, output, notif| {
+                                                while let Some((time, data)) = input.next() {
+                                                    notif.notify_at(time);
+                                                    for m in monitor.as_ref() {
+                                                        m.add_partial_aggreg(data.len());
+                                                    }
+                                                    let before = hashmap.len();
+                                                    for (k, v) in data.drain(..) {
+                                                        update_hashmap(&mut hashmap,
+                                                                       &|a, b| a + b,
+                                                                       k,
+                                                                       v);
+                                                    }
+                                                    for m in monitor.as_ref() {
+                                                        m.add_aggreg(hashmap.len() - before);
+                                                    }
+                                                }
+                                                while let Some((iter, _)) = notif.next() {
+                                                    if hashmap.len() > 0 {
+                                                        output.session(&iter)
+                                                              .give(hashmap.len());
+                                                        hashmap.clear();
+                                                    }
+                                                }
+                                            });
 
                 let _count: Stream<_, ()> = group_count.unary_notify(Exchange::new(|_| 0u64),
                                                                      "count",
@@ -400,13 +406,18 @@ impl Runner {
                                                                                  sum += x;
                                                                              }
                                                                          }
+                                                                         notify.for_each(|_, _| {
+                                                                             if sum > 0 {
+                                                                                 result_to_go.store(sum, sync::atomic::Ordering::Relaxed);
+                                                                                 sum = 0;
+                                                                             }
+                                                                         })
                                                                      });
 
             });
 
             while root.step() {
             }
-            result_to_go.store(sum, sync::atomic::Ordering::Relaxed);
         });
         result.fetch_add(0, sync::atomic::Ordering::Relaxed)
     }
