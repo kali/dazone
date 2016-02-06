@@ -48,7 +48,7 @@ fn main() {
 
 
     let set = matches.value_of("SET").unwrap_or("5nodes").to_string();
-    let input = matches.value_of("INPUT").unwrap_or("cap").to_string();
+    let input = matches.value_of("INPUT").unwrap_or("buren-snz").to_string();
 
     let monitor: Option<sync::Arc<Monitor>> = matches.value_of("MONITOR").map(|f| {
         Monitor::new(time::Duration::seconds(1),
@@ -91,14 +91,11 @@ fn main() {
 
     let usage = ::dazone::rusage::get_rusage();
     let vmsize = ::dazone::rusage::get_memory_usage().unwrap().virtual_size;
-    println!("set: {:6} chunks: {:4} length: {:2} strat: {:6} sip: {:?} buckets: {:4} workers: \
-              {:4} rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:.03} \
-              groups: {:12}",
-             &*runner.set,
-             runner.chunks.unwrap_or(0),
+    println!("length: {:2} strat: {:6} buckets: {:4} workers: \
+              {:4} rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:3.01} \
+              groups: {:9}",
              length,
              &*runner.strategy,
-             runner.sip,
              runner.buckets,
              runner.workers,
              usage.ru_maxrss / 1024 / 1024,
