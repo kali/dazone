@@ -1,6 +1,6 @@
 ---
 
-- hosts: all
+- hosts: tag_dazone_True
   user: ubuntu
   tasks:
     - name: download data

@@ -26,7 +26,7 @@ use dazone::crunch::aggregators::update_hashmap;
 use std::hash::Hasher;
 use std::collections::HashMap;
 
-use std::sync::Arc;
+use std::sync;
 
 fn main() {
     let app = clap_app!( query2 =>
@@ -50,7 +50,7 @@ fn main() {
     let set = matches.value_of("SET").unwrap_or("5nodes").to_string();
     let input = matches.value_of("INPUT").unwrap_or("cap").to_string();
 
-    let monitor: Option<Arc<Monitor>> = matches.value_of("MONITOR").map(|f| {
+    let monitor: Option<sync::Arc<Monitor>> = matches.value_of("MONITOR").map(|f| {
         Monitor::new(time::Duration::seconds(1),
                      ::std::fs::File::create(f).unwrap(),
                      ::dazone::files::files_for_format(&*set, "uservisits", &*input)
@@ -76,25 +76,23 @@ fn main() {
         monitor: monitor,
     };
 
-    println!("runner: {:?}", runner);
-
     let t1 = ::time::get_time();
 
     let length: usize = matches.value_of("KEY_LENGTH").unwrap_or("8").parse().unwrap();
-    match length {
+    let groups = match length {
         8 => runner.clone().run::<Bytes8>(),
         9 => runner.clone().run::<Bytes9>(),
         10 => runner.clone().run::<Bytes10>(),
         11 => runner.clone().run::<Bytes11>(),
         12 => runner.clone().run::<Bytes12>(),
         _ => panic!("key length {} not implemented"),
-    }
+    };
     let t2 = ::time::get_time();
 
     let usage = ::dazone::rusage::get_rusage();
     let vmsize = ::dazone::rusage::get_memory_usage().unwrap().virtual_size;
     println!("set: {:6} chunks: {:4} length: {:2} strat: {:6} sip: {:?} buckets: {:4} workers: {:4} \
-              rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:.03}",
+              rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:.03} groups: {:12}",
              &*runner.set,
              runner.chunks.unwrap_or(0),
              length,
@@ -106,7 +104,8 @@ fn main() {
              vmsize / 1024 / 1024,
              usage.ru_utime.tv_sec,
              usage.ru_stime.tv_sec,
-             (t2 - t1).num_milliseconds() as f32 / 1000.0);
+             (t2 - t1).num_milliseconds() as f32 / 1000.0,
+             groups);
 
 }
 
@@ -123,17 +122,17 @@ struct Runner {
     // progress: bool,
     hosts: Option<String>,
     me: Option<usize>,
-    monitor: Option<Arc<Monitor>>,
+    monitor: Option<sync::Arc<Monitor>>,
 }
 
 struct Sigil<I: Iterator<Item = T>, T> {
-    monitor: Option<Arc<Monitor>>,
+    monitor: Option<sync::Arc<Monitor>>,
     count: usize,
     inner: I,
 }
 
 impl<I: Iterator<Item = T>, T> Sigil<I, T> {
-    fn new(it: I, mon: Option<Arc<Monitor>>) -> Sigil<I, T> {
+    fn new(it: I, mon: Option<sync::Arc<Monitor>>) -> Sigil<I, T> {
         Sigil {
             monitor: mon,
             count: 0,
@@ -162,13 +161,13 @@ impl<I: Iterator<Item = T>, T> Iterator for Sigil<I, T> {
 }
 
 impl Runner {
-    fn run<K>(mut self)
+    fn run<K>(mut self) -> usize
         where K: ShortBytesArray
     {
         if self.strategy == "timely" {
-            self.run_timely::<K>();
+            self.run_timely::<K>()
         } else {
-            self.run_standalone::<K>();
+            self.run_standalone::<K>()
         }
     }
 
@@ -254,7 +253,7 @@ impl Runner {
         }
     }
 
-    fn run_standalone_hashes<K,S>(&self, bibi:BI<BI<(K,f32)>> ,hasher:S) -> u64
+    fn run_standalone_hashes<K,S>(&self, bibi:BI<BI<(K,f32)>> ,hasher:S) -> usize
           where K: Send + Eq + ::std::hash::Hash + 'static,
           S: Send + Sync + ::std::hash::BuildHasher + 'static + Clone {
         let r = |a: &f32, b: &f32| a + b;
@@ -267,15 +266,15 @@ impl Runner {
             .with_workers(self.workers)
             .run(bibi, &mut aggregator);
         aggregator.converge();
-        aggregator.len()
+        aggregator.len() as usize
     }
 
-    fn run_standalone<K>(&mut self)
+    fn run_standalone<K>(&mut self) -> usize
         where K: ShortBytesArray
     {
         let r = |a: &f32, b: &f32| a + b;
         let bibi = self.sharded_input::<K>(0, 1);
-        let groups = match &*self.strategy {
+        match &*self.strategy {
             "hash" => {
                 let mut aggregator = ::dazone::crunch::aggregators::HashMapAggregator::new(&r)
                                          .with_monitor(self.monitor.clone());
@@ -284,7 +283,7 @@ impl Runner {
                     .with_workers(self.workers)
                     .run(bibi, &mut aggregator);
                 aggregator.converge();
-                aggregator.len()
+                aggregator.len() as usize
             }
             "hashes" => if self.sip {
                 self.run_standalone_hashes(bibi, std::collections::hash_map::RandomState::new())
@@ -300,14 +299,13 @@ impl Runner {
                     .with_workers(self.workers)
                     .run(bibi, &mut aggregator);
                 aggregator.converge();
-                aggregator.len()
+                aggregator.len() as usize
             }
             s => panic!("unknown strategy {}", s),
-        };
-        println!("groups: {}", groups);
+        }
     }
 
-    fn run_timely<K>(self)
+    fn run_timely<K>(self) -> usize
         where K: ShortBytesArray
     {
 
@@ -333,14 +331,12 @@ impl Runner {
                                                              format!("{}:{}", host, 2101 + index)
                                                          })
                                                          .collect();
-                println!("workers:{} hosts_with_ports:{:?} me:{}",
-                         self.workers,
-                         hosts_with_ports,
-                         position);
                 ::timely::Configuration::Cluster(self.workers, position, hosts_with_ports, false)
             }
             None => ::timely::Configuration::Process(self.workers),
         };
+        let result = sync::Arc::new(sync::atomic::AtomicUsize::new(0));
+        let result_to_go = result.clone();
 
         timely::execute(conf, move |root| {
             let mut hashmap = HashMap::new();
@@ -350,7 +346,7 @@ impl Runner {
             let bibi = self.sharded_input::<K>(index, peers);
             for m in self.monitor.as_ref() {
                 m.target.fetch_add(bibi.size_hint().1.unwrap_or(0),
-                                   std::sync::atomic::Ordering::Relaxed);
+                                   sync::atomic::Ordering::Relaxed);
             }
             let monitor = self.monitor.clone();
             root.scoped::<u64, _, _>(move |builder| {
@@ -404,24 +400,14 @@ impl Runner {
                                                                                  sum += x;
                                                                              }
                                                                          }
-                                                                         notify.for_each(|_, _| {
-                                                                             if sum > 0 {
-                                                                                 println!("XXXX w\
-                                                                                           orker: \
-                                                                                           {} gro\
-                                                                                           ups:{} \
-                                                                                           XXXX",
-                                                                                          index,
-                                                                                          sum);
-                                                                                 sum = 0;
-                                                                             }
-                                                                         })
                                                                      });
 
             });
 
             while root.step() {
             }
+            result_to_go.store(sum, sync::atomic::Ordering::Relaxed);
         });
+        result.fetch_add(0, sync::atomic::Ordering::Relaxed)
     }
 }

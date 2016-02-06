@@ -1,6 +1,6 @@
 ---
 
-- hosts: all
+- hosts: tag_dazone_True
   user: ubuntu
   tasks:
     - name: simple disk bandwidth probe
@@ -8,30 +8,17 @@
       register: hdparm
       become: true
     - debug: var=hdparm.stdout_lines
-    - name: purge
-      shell: sync && echo 3 > /proc/sys/vm/drop_caches
-      become: true
-    - name: query2A
-      command: ./target/release/query2 -i buren-snz
-      register: query2A
-      args:
-        chdir: dazone
-    - debug: var=query2A.stdout_lines
-    - name: purge
-      shell: sync && echo 3 > /proc/sys/vm/drop_caches
-      become: true
-    - name: query2B
-      command: ./target/release/query2 -i buren-snz -k 10
-      register: query2B
-      args:
-        chdir: dazone
-    - debug: var=query2B.stdout_lines
-    - name: purge
-      shell: sync && echo 3 > /proc/sys/vm/drop_caches
-      become: true
-    - name: query2C
-      command: ./target/release/query2 -i buren-snz -k 12
-      register: query2C
-      args:
-        chdir: dazone
-    - debug: var=query2C.stdout_lines
+
+    - block:
+      - name: purge
+        shell: sync && echo 3 > /proc/sys/vm/drop_caches
+        become: true
+      - name: query2
+        shell: ./target/release/query2 -i buren-snz -k {{ item[0] }} -r {{ item[1] }} | tee -a ~/output
+        register: query
+        args:
+          chdir: dazone
+      - debug: var=query.stdout_lines
+      with_nested:
+        - [ "hashes", "timely" ]
+        - [ 8, 10, 12 ]
