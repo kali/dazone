@@ -1,0 +1,14 @@
+---
+
+- hosts: tag_dazone_True
+  user: ubuntu
+  tasks:
+    - action: ec2_facts
+    - debug: var=ec2
+    - name: terminating instances
+      local_action:
+        module: ec2
+        state: 'absent'
+        region: us-east-1
+        instance_ids: "{{ ansible_ec2_instance_id }}"
+

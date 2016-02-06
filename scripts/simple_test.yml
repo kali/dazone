@@ -12,11 +12,15 @@
     - name: query2
       shell: |
         sudo sh -c "echo 3 > /proc/sys/vm/drop_caches"
-        ./target/release/query2 -i buren-snz -r {{ item[0] }} -k {{ item[1] }} >> ~/output
+        ./target/release/query2 -i buren-snz -r {{ item.r }} -k {{ item.k }}  -b {{ item.b }} -w {{ item.w }} >> ~/output
       args:
         chdir: dazone
-      with_nested:
-        - [ "hashes", "timely" ]
-        - [ 8, 10, 12 ]
-      register: query2
-    - debug: var=query2
+      with_items:
+        - { r: 'hashes', k:  8, b: 257, w: "{{ 2*ansible_processor_cores }}"   }
+        - { r: 'hashes', k: 10, b: 257, w: "{{ 2*ansible_processor_cores }}"   }
+        - { r: 'hashes', k: 12, b: 307, w: "{{ 2*ansible_processor_cores }}"   }
+        - { r: 'timely', k:  8, b:   0, w: "{{ 2*ansible_processor_cores }}"   }
+        - { r: 'timely', k: 10, b:   0, w: "{{ 2*ansible_processor_cores }}"   }
+        - { r: 'timely', k: 12, b:   0, w: "{{ 2*ansible_processor_cores+2 }}" }
+
+    - fetch: src=output dest=run-{{ ansible_date_time.iso8601 }}
