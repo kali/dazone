@@ -46,7 +46,8 @@ use std::hash::Hash;
 
 pub fn hash<K: Hash>(k: &K) -> usize {
     use std::hash::{Hasher, SipHasher};
-    let mut s = SipHasher::new();
+//    let mut s = SipHasher::new();
+    let mut s  = fnv::FnvHasher::default();
     k.hash(&mut s);
     s.finish() as usize
 }

@@ -50,15 +50,17 @@ fn main() {
     let set = matches.value_of("SET").unwrap_or("5nodes").to_string();
     let input = matches.value_of("INPUT").unwrap_or("buren-snz").to_string();
 
-    let monitor: Option<sync::Arc<Monitor>> = matches.value_of("MONITOR").map(|f| {
-        Monitor::new(time::Duration::seconds(1),
-                     ::std::fs::File::create(f).unwrap(),
-                     ::dazone::files::files_for_format(&*set, "uservisits", &*input)
-                         .size_hint()
-                         .1
-                         .unwrap_or(0),
-                     matches.is_present("PROGRESS_BAR"))
-    });
+    let monitor: sync::Arc<Monitor> = Monitor::new(time::Duration::seconds(1),
+                                                   matches.value_of("MONITOR").map(|f| {
+                                                       ::std::fs::File::create(f).unwrap()
+                                                   }),
+                                                   ::dazone::files::files_for_format(&*set,
+                                                                                     "uservisits",
+                                                                                     &*input)
+                                                       .size_hint()
+                                                       .1
+                                                       .unwrap_or(0),
+                                                   matches.is_present("PROGRESS_BAR"));
 
     let runner = Runner {
         set: set,
@@ -91,9 +93,8 @@ fn main() {
 
     let usage = ::dazone::rusage::get_rusage();
     let vmsize = ::dazone::rusage::get_memory_usage().unwrap().virtual_size;
-    println!("length: {:2} strat: {:6} buckets: {:4} workers: \
-              {:4} rss_mb: {:5} vmmsize_mb: {:5} utime_s: {:5} stime_s: {:5} ctime_s: {:3.01} \
-              groups: {:9}",
+    println!("length: {:2} strat: {:6} buckets: {:4} workers: {:4} rss_mb: {:5} vmmsize_mb: {:5} \
+              utime_s: {:5} stime_s: {:5} ctime_s: {:3.01} groups: {:9}",
              length,
              &*runner.strategy,
              runner.buckets,
@@ -120,17 +121,17 @@ struct Runner {
     // progress: bool,
     hosts: Option<String>,
     me: Option<usize>,
-    monitor: Option<sync::Arc<Monitor>>,
+    monitor: sync::Arc<Monitor>,
 }
 
 struct Sigil<I: Iterator<Item = T>, T> {
-    monitor: Option<sync::Arc<Monitor>>,
+    monitor: sync::Arc<Monitor>,
     count: usize,
     inner: I,
 }
 
 impl<I: Iterator<Item = T>, T> Sigil<I, T> {
-    fn new(it: I, mon: Option<sync::Arc<Monitor>>) -> Sigil<I, T> {
+    fn new(it: I, mon: sync::Arc<Monitor>) -> Sigil<I, T> {
         Sigil {
             monitor: mon,
             count: 0,
@@ -148,10 +149,8 @@ impl<I: Iterator<Item = T>, T> Iterator for Sigil<I, T> {
                 Some(item)
             }
             None => {
-                for m in self.monitor.as_ref() {
-                    m.add_progress(1);
-                    m.add_read(self.count);
-                }
+                self.monitor.add_progress(1);
+                self.monitor.add_read(self.count);
                 None
             }
         }
@@ -260,10 +259,10 @@ impl Runner {
             ::dazone::crunch::aggregators::MultiHashMapAggregator::with_hasher(&r,
                                                                                self.buckets,
                                                                                hasher)
-                .with_monitor(self.monitor.clone())
+                .with_monitor(Some(self.monitor.clone()))
                 .with_partial_aggregation(self.partial);
         MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
-            .with_monitor(self.monitor.clone())
+            .with_monitor(Some(self.monitor.clone()))
             .with_workers(self.workers)
             .run(bibi, &mut aggregator);
         aggregator.converge();
@@ -278,9 +277,9 @@ impl Runner {
         match &*self.strategy {
             "hash" => {
                 let mut aggregator = ::dazone::crunch::aggregators::HashMapAggregator::new(&r)
-                                         .with_monitor(self.monitor.clone());
+                                         .with_monitor(Some(self.monitor.clone()));
                 MapOp::new_map_reduce(|(a, b)| Emit::One(a, b))
-                    .with_monitor(self.monitor.clone())
+                    .with_monitor(Some(self.monitor.clone()))
                     .with_workers(self.workers)
                     .run(bibi, &mut aggregator);
                 aggregator.converge();
@@ -296,9 +295,9 @@ impl Runner {
             "tries" => {
                 let mut aggregator =
                     ::dazone::crunch::aggregators::MultiTrieAggregator::new(&r, self.buckets)
-                        .with_monitor(self.monitor.clone());
+                        .with_monitor(Some(self.monitor.clone()));
                 MapOp::new_map_reduce(|(a, b): (K, f32)| Emit::One(a.to_vec(), b))
-                    .with_monitor(self.monitor.clone())
+                    .with_monitor(Some(self.monitor.clone()))
                     .with_workers(self.workers)
                     .run(bibi, &mut aggregator);
                 aggregator.converge();
@@ -348,10 +347,8 @@ impl Runner {
             let index = root.index();
             let peers = root.peers();
             let bibi = self.sharded_input::<K>(index, peers);
-            for m in self.monitor.as_ref() {
-                m.target.fetch_add(bibi.size_hint().1.unwrap_or(0),
-                                   sync::atomic::Ordering::Relaxed);
-            }
+            self.monitor.target.fetch_add(bibi.size_hint().1.unwrap_or(0),
+                               sync::atomic::Ordering::Relaxed);
             let monitor = self.monitor.clone();
             root.scoped::<u64, _, _>(move |builder| {
                 let result_to_go = result_to_go.clone();
@@ -367,9 +364,7 @@ impl Runner {
                                             move |input, output, notif| {
                                                 while let Some((time, data)) = input.next() {
                                                     notif.notify_at(time);
-                                                    for m in monitor.as_ref() {
-                                                        m.add_partial_aggreg(data.len());
-                                                    }
+                                                    monitor.add_partial_aggreg(data.len());
                                                     let before = hashmap.len();
                                                     for (k, v) in data.drain(..) {
                                                         update_hashmap(&mut hashmap,
@@ -377,9 +372,7 @@ impl Runner {
                                                                        k,
                                                                        v);
                                                     }
-                                                    for m in monitor.as_ref() {
-                                                        m.add_aggreg(hashmap.len() - before);
-                                                    }
+                                                    monitor.add_aggreg(hashmap.len() - before);
                                                 }
                                                 while let Some((iter, _)) = notif.next() {
                                                     if hashmap.len() > 0 {

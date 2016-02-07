@@ -174,7 +174,7 @@ pub struct Monitor {
 
 impl Monitor {
     pub fn new<W: Write + Send + 'static>(interval: time::Duration,
-                                          write: W,
+                                          write: Option<W>,
                                           target: usize,
                                           progress_bar: bool)
                                           -> sync::Arc<Monitor> {
@@ -184,82 +184,84 @@ impl Monitor {
             monitor.progress_bar = Some(sync::Mutex::new(ProgressBar::new(target)));
         };
         let monitor = sync::Arc::new(monitor);
-        let monitor_to_go = monitor.clone();
-        let cpus = ::num_cpus::get();
-        ::std::thread::spawn(move || {
-            let mut buffed = io::BufWriter::new(write);
-            let started = time::get_time();
-            for step in 0.. {
-                let now = interval * step;
-                let usage = get_memory_usage().unwrap();
-                let allocated = 0i64;
-                let active = 0i64;
-                let metadata = 0i64;
-                let resident = 0i64;
-                let mapped = 0i64;
-                unsafe {
-                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
-                    let epoch: i64 = step as i64;
-                    je_mallctl("epoch\0".as_ptr() as *const i8,
-                               ::std::mem::transmute(&epoch),
-                               ::std::mem::transmute(&size),
-                               ::std::mem::transmute(&epoch),
-                               size);
-                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
-                    je_mallctl("stats.allocated\0".as_ptr() as *const i8,
-                               ::std::mem::transmute(&allocated),
-                               ::std::mem::transmute(&size),
-                               ::std::ptr::null(),
-                               0i64);
-                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
-                    je_mallctl("stats.active\0".as_ptr() as *const i8,
-                               ::std::mem::transmute(&active),
-                               ::std::mem::transmute(&size),
-                               ::std::ptr::null(),
-                               0i64);
-                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
-                    je_mallctl("stats.metadata\0".as_ptr() as *const i8,
-                               ::std::mem::transmute(&metadata),
-                               ::std::mem::transmute(&size),
-                               ::std::ptr::null(),
-                               0i64);
-                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
-                    je_mallctl("stats.resident\0".as_ptr() as *const i8,
-                               ::std::mem::transmute(&resident),
-                               ::std::mem::transmute(&size),
-                               ::std::ptr::null(),
-                               0i64);
-                    let size: i64 = ::std::mem::size_of::<i64>() as i64;
-                    je_mallctl("stats.mapped\0".as_ptr() as *const i8,
-                               ::std::mem::transmute(&mapped),
-                               ::std::mem::transmute(&size),
-                               ::std::ptr::null(),
-                               0i64);
-                };
-                write!(buffed,
-                       "{:7.3} {:4} {:4} {:10} {:10} {:2} {:8.3} {:8.3} {:10} {:10} | {:10} \
-                        {:10} {:10} {:10} {:10} | {:10} {:10} {:10}\n",
-                       now.num_milliseconds() as f32 / 1000f32,
-                       monitor_to_go.progress.load(Relaxed),
-                       monitor_to_go.target.load(Relaxed),
-                       usage.resident_size,
-                       usage.virtual_size,
-                       cpus,
-                       usage.user_time,
-                       usage.system_time,
-                       usage.minor_fault,
-                       usage.major_fault,
-                       allocated,
-                       active,
-                       metadata,
-                       resident,
-                       mapped, monitor_to_go.read.load(Relaxed), monitor_to_go.partial_aggreg.load(Relaxed), monitor_to_go.aggreg.load(Relaxed))
-                    .unwrap();
-                buffed.flush().unwrap();
-                let delay = started + now + interval - time::get_time();
-                ::std::thread::sleep(Duration::from_millis(delay.num_milliseconds() as u64));
-            }
-        });
+        for write in write {
+            let monitor_to_go = monitor.clone();
+            let cpus = ::num_cpus::get();
+            ::std::thread::spawn(move || {
+                let mut buffed = io::BufWriter::new(write);
+                let started = time::get_time();
+                for step in 0.. {
+                    let now = interval * step;
+                    let usage = get_memory_usage().unwrap();
+                    let allocated = 0i64;
+                    let active = 0i64;
+                    let metadata = 0i64;
+                    let resident = 0i64;
+                    let mapped = 0i64;
+                    unsafe {
+                        let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                        let epoch: i64 = step as i64;
+                        je_mallctl("epoch\0".as_ptr() as *const i8,
+                                   ::std::mem::transmute(&epoch),
+                                   ::std::mem::transmute(&size),
+                                   ::std::mem::transmute(&epoch),
+                                   size);
+                        let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                        je_mallctl("stats.allocated\0".as_ptr() as *const i8,
+                                   ::std::mem::transmute(&allocated),
+                                   ::std::mem::transmute(&size),
+                                   ::std::ptr::null(),
+                                   0i64);
+                        let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                        je_mallctl("stats.active\0".as_ptr() as *const i8,
+                                   ::std::mem::transmute(&active),
+                                   ::std::mem::transmute(&size),
+                                   ::std::ptr::null(),
+                                   0i64);
+                        let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                        je_mallctl("stats.metadata\0".as_ptr() as *const i8,
+                                   ::std::mem::transmute(&metadata),
+                                   ::std::mem::transmute(&size),
+                                   ::std::ptr::null(),
+                                   0i64);
+                        let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                        je_mallctl("stats.resident\0".as_ptr() as *const i8,
+                                   ::std::mem::transmute(&resident),
+                                   ::std::mem::transmute(&size),
+                                   ::std::ptr::null(),
+                                   0i64);
+                        let size: i64 = ::std::mem::size_of::<i64>() as i64;
+                        je_mallctl("stats.mapped\0".as_ptr() as *const i8,
+                                   ::std::mem::transmute(&mapped),
+                                   ::std::mem::transmute(&size),
+                                   ::std::ptr::null(),
+                                   0i64);
+                    };
+                    write!(buffed,
+                           "{:7.3} {:4} {:4} {:10} {:10} {:2} {:8.3} {:8.3} {:10} {:10} | {:10} \
+                            {:10} {:10} {:10} {:10} | {:10} {:10} {:10}\n",
+                           now.num_milliseconds() as f32 / 1000f32,
+                           monitor_to_go.progress.load(Relaxed),
+                           monitor_to_go.target.load(Relaxed),
+                           usage.resident_size,
+                           usage.virtual_size,
+                           cpus,
+                           usage.user_time,
+                           usage.system_time,
+                           usage.minor_fault,
+                           usage.major_fault,
+                           allocated,
+                           active,
+                           metadata,
+                           resident,
+                           mapped, monitor_to_go.read.load(Relaxed), monitor_to_go.partial_aggreg.load(Relaxed), monitor_to_go.aggreg.load(Relaxed))
+                        .unwrap();
+                    buffed.flush().unwrap();
+                    let delay = started + now + interval - time::get_time();
+                    ::std::thread::sleep(Duration::from_millis(delay.num_milliseconds() as u64));
+                }
+            });
+        }
         monitor
     }
 
