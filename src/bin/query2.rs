@@ -9,7 +9,11 @@ extern crate time;
 extern crate num_cpus;
 extern crate abomonation;
 extern crate timely;
+extern crate timely_communication;
 extern crate libc;
+
+use std::sync;
+use std::sync::atomic::Ordering::Relaxed;
 
 use dazone::crunch::{BI, Emit, MapOp, Aggregator};
 use dazone::short_bytes_array::*;
@@ -18,16 +22,13 @@ use dazone::rusage::*;
 use timely::dataflow::*;
 use timely::dataflow::operators::*;
 use timely::dataflow::channels::pact::Exchange;
+use timely::dataflow::scopes::root::Root;
+use timely_communication::allocator::generic::Generic;
 
 use capnp::serialize::OwnedSegments;
 use capnp::message::Reader;
 
-use dazone::crunch::aggregators::update_hashmap;
-
 use std::hash::Hasher;
-use std::collections::HashMap;
-
-use std::sync;
 
 fn main() {
     let app = clap_app!( query2 =>
@@ -338,78 +339,95 @@ impl Runner {
             }
             None => ::timely::Configuration::Process(self.workers),
         };
+
         let result = sync::Arc::new(sync::atomic::AtomicUsize::new(0));
         let result_to_go = result.clone();
 
         timely::execute(conf, move |root| {
-            let result_to_go = result_to_go.clone();
-            let mut hashmap = HashMap::with_hasher(std::collections::hash_state::DefaultState::<fnv::FnvHasher>::default());
-            let mut sum = 0usize;
-            let index = root.index();
-            let peers = root.peers();
-            let bibi = self.sharded_input::<K>(index, peers);
-            self.monitor.target.fetch_add(bibi.size_hint().1.unwrap_or(0),
-                                          sync::atomic::Ordering::Relaxed);
-            let monitor = self.monitor.clone();
-            root.scoped::<u64, _, _>(move |builder| {
-                let result_to_go = result_to_go.clone();
-
-                let uservisits = bibi.flat_map(move |inner| inner).to_stream(builder);
-
-                let group_count =
-                    uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
-                                                ::dazone::hash(&(x.0)) as u64
-                                            }),
-                                            "groupby-map",
-                                            vec![],
-                                            move |input, output, notif| {
-                                                while let Some((time, data)) = input.next() {
-                                                    notif.notify_at(time);
-                                                    monitor.add_partial_aggreg(data.len());
-                                                    let before = hashmap.len();
-                                                    for (k, v) in data.drain(..) {
-                                                        update_hashmap(&mut hashmap,
-                                                                       &|a, b| a + b,
-                                                                       k,
-                                                                       v);
-                                                    }
-                                                    monitor.add_aggreg(hashmap.len() - before);
-                                                }
-                                                while let Some((iter, _)) = notif.next() {
-                                                    if hashmap.len() > 0 {
-                                                        output.session(&iter)
-                                                              .give(hashmap.len());
-                                                        hashmap.clear();
-                                                    }
-                                                }
-                                            });
-
-                let _count: Stream<_, ()> = group_count.unary_notify(Exchange::new(|_| 0u64),
-                                                                     "count",
-                                                                     vec![],
-                                                                     move |input, _, notify| {
-                                                                         while let Some((time,
-                                                                                         data)) =
-                                                                                   input.next() {
-                                                                             notify.notify_at(time);
-                                                                             for x in
-                                                                                 data.drain(..) {
-                                                                                 sum += x;
-                                                                             }
-                                                                         }
-                                                                         notify.for_each(|_, _| {
-                                                                             if sum > 0 {
-                                                                                 result_to_go.store(sum, sync::atomic::Ordering::Relaxed);
-                                                                                 sum = 0;
-                                                                             }
-                                                                         })
-                                                                     });
-
+            use dazone::timely_accumulators::HashMapAccumulator;
+            let accu: HashMapAccumulator<K, f32, _> = HashMapAccumulator::new(|a: &f32,
+                                                                               b: &f32| {
+                a + b
             });
-
-            while root.step() {
-            }
+            /*
+            use dazone::timely_accumulators::MergeSortAccumulator;
+            let accu: MergeSortAccumulator<K, f32, _> = MergeSortAccumulator::new(|a: &f32,
+                                                                               b: &f32| {
+                a + b
+            });
+            */
+            self.run_timely_with_accumulator(accu, result_to_go.clone(), root);
         });
-        result.fetch_add(0, sync::atomic::Ordering::Relaxed)
+        result.fetch_add(0, Relaxed)
+    }
+
+    fn run_timely_with_accumulator<K, A>(&self,
+                                         mut accu: A,
+                                         result: sync::Arc<sync::atomic::AtomicUsize>,
+                                         root: &mut Root<Generic>)
+        where K: ShortBytesArray,
+              A: dazone::timely_accumulators::SimpleAccumulator<K, f32> + 'static
+    {
+        let result_to_go = result.clone();
+        let mut sum = 0usize;
+        let index = root.index();
+        let peers = root.peers();
+        let bibi = self.sharded_input::<K>(index, peers);
+        self.monitor.target.fetch_add(bibi.size_hint().1.unwrap_or(0), Relaxed);
+        let monitor = self.monitor.clone();
+        root.scoped::<u64, _, _>(move |builder| {
+            let result_to_go = result_to_go.clone();
+
+            let uservisits = bibi.flat_map(move |inner| inner).to_stream(builder);
+
+            let group_count =
+                uservisits.unary_notify(Exchange::new(move |x: &(K, f32)| {
+                                            ::dazone::hash(&(x.0)) as u64
+                                        }),
+                                        "groupby-map",
+                                        vec![],
+                                        move |input, output, notif| {
+                                            while let Some((time, data)) = input.next() {
+                                                notif.notify_at(time);
+                                                monitor.add_partial_aggreg(data.len());
+                                                // let before = hashmap.len();
+                                                //
+                                                for (k, v) in data.drain(..) {
+                                                    accu.offer(k, v);
+                                                }
+                                                // monitor.add_aggreg(hashmap.len() - before);
+                                            }
+                                            while let Some((iter, _)) = notif.next() {
+                                                accu.converge();
+                                                if accu.len() > 0 {
+                                                    output.session(&iter)
+                                                          .give(accu.len());
+                                                }
+                                            }
+                                        });
+
+            let _count: Stream<_, ()> = group_count.unary_notify(Exchange::new(|_| 0u64),
+                                                                 "count",
+                                                                 vec![],
+                                                                 move |input, _, notify| {
+                                                                     while let Some((time, data)) =
+                                                                               input.next() {
+                                                                         notify.notify_at(time);
+                                                                         for x in data.drain(..) {
+                                                                             sum += x;
+                                                                         }
+                                                                     }
+                                                                     notify.for_each(|_, _| {
+                                                 if sum > 0 {
+                                                     result_to_go.store(sum, Relaxed);
+                                                     sum = 0;
+                                                 }
+                                             })
+                                                                 });
+
+        });
+        while root.step() {
+        }
+
     }
 }

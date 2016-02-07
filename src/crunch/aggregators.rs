@@ -500,6 +500,27 @@ pub fn update_hashmap<'h, 'r, R, K, V, S>(hash: &'h mut HashMap<K, V, S>,
     }
 }
 
+pub fn update_btreemap<'h, 'r, R, K, V>(hash: &'h mut ::std::collections::BTreeMap<K, V>,
+                                          reducer: &'r R,
+                                          k: K,
+                                          v: V)
+    where R: Sync + Fn(&V, &V) -> V + 'static,
+          K: Send + Eq + Ord + 'static,
+          V: Send + 'static
+{
+    use std::collections::btree_map::Entry;
+    let val = hash.entry(k);
+    match val {
+        Entry::Occupied(prev) => {
+            let next = reducer(prev.get(), &v);
+            *(prev.into_mut()) = next;
+        }
+        Entry::Vacant(vac) => {
+            vac.insert(v);
+        }
+    }
+}
+
 #[allow(dead_code)]
 fn dump_vec_map<K, V>(i: usize, hashes: &Vec<HashMap<K, V>>)
     where K: Send + Eq + Hash + 'static,

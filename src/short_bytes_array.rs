@@ -5,14 +5,14 @@ use std::fmt::Debug;
 
 use std::hash::{Hash, Hasher};
 
-pub trait ShortBytesArray : Abomonation + Hash + Send + Clone + Reflect + Eq + Debug + 'static {
+pub trait ShortBytesArray : Abomonation + Hash + Send + Clone + Reflect + Eq + Debug + Ord + 'static {
     fn prefix(s: &str) -> Self;
     fn to_vec(&self) -> Vec<u8>;
 }
 
 macro_rules! short_bytes_array {
     ( $name:ident $size:expr ) => {
-        #[derive(Copy,Clone,Debug,PartialEq,Eq)]
+        #[derive(Copy,Clone,Debug,PartialEq,Eq,Ord,PartialOrd)]
         pub struct $name([u8;$size]);
 
         impl ShortBytesArray for $name {

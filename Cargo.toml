@@ -14,6 +14,7 @@ itertools = "*"
 quick-error = "0.2.1"
 rmp = "*"
 csv = "*"
+rand = "*"
 rustc-serialize = "*"
 rmp-serialize = "*"
 pbr = "*"
@@ -35,6 +36,7 @@ serde = "*"
 serde_json = "*"
 serde_macros = "*"
 lz4 = { git = "http://github.com/kali/lz4-rs" }
+timely_communication = "0.1.3"
 
 [dependencies.capdata]
 path = "capdata"
