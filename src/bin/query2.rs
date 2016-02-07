@@ -4,13 +4,14 @@ extern crate capnp;
 extern crate capdata as cap;
 #[macro_use]
 extern crate clap;
+extern crate fnv;
 extern crate time;
 extern crate num_cpus;
 extern crate abomonation;
 extern crate timely;
 extern crate libc;
 
-use dazone::crunch::*;
+use dazone::crunch::{BI, Emit, MapOp, Aggregator};
 use dazone::short_bytes_array::*;
 use dazone::rusage::*;
 
@@ -342,13 +343,13 @@ impl Runner {
 
         timely::execute(conf, move |root| {
             let result_to_go = result_to_go.clone();
-            let mut hashmap = HashMap::new();
+            let mut hashmap = HashMap::with_hasher(std::collections::hash_state::DefaultState::<fnv::FnvHasher>::default());
             let mut sum = 0usize;
             let index = root.index();
             let peers = root.peers();
             let bibi = self.sharded_input::<K>(index, peers);
             self.monitor.target.fetch_add(bibi.size_hint().1.unwrap_or(0),
-                               sync::atomic::Ordering::Relaxed);
+                                          sync::atomic::Ordering::Relaxed);
             let monitor = self.monitor.clone();
             root.scoped::<u64, _, _>(move |builder| {
                 let result_to_go = result_to_go.clone();
