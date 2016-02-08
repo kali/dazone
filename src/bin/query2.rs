@@ -51,7 +51,6 @@ fn main() {
     let matches = app.get_matches();
     let start = chrono::UTC::now();
 
-
     let set = matches.value_of("SET").unwrap_or("5nodes").to_string();
     let input = matches.value_of("INPUT").unwrap_or("buren-snz").to_string();
 
@@ -78,13 +77,14 @@ fn main() {
                         .map(|a| a.parse::<usize>().unwrap())
                         .unwrap_or(::num_cpus::get() * 2),
         buckets: matches.value_of("BUCKETS").unwrap_or("256").parse().unwrap(),
-        hosts: matches.value_of("HOSTS").map(|x| x.to_string()),
+        hosts: matches.values_of("HOSTS").map(|x| x.map(|v| v.to_string()).collect::<Vec<_>>()),
         me: matches.value_of("ME").map(|x| x.parse().unwrap()),
         monitor: monitor,
     };
 
     if matches.is_present("VERBOSE") {
         println!("{:?}", runner);
+        println!("{:?}", matches.value_of("HOSTS"));
     }
 
     let t1 = ::time::get_time();
@@ -129,7 +129,7 @@ struct Runner {
     workers: usize,
     buckets: usize,
     // progress: bool,
-    hosts: Option<String>,
+    hosts: Option<Vec<String>>,
     me: Option<usize>,
     monitor: sync::Arc<Monitor>,
 }
@@ -333,7 +333,6 @@ impl Runner {
 
         let conf: ::timely::Configuration = match self.hosts.as_ref() {
             Some(hosts) => {
-                let hosts: Vec<String> = hosts.split(",").map(|x| x.to_owned()).collect();
                 let position = self.me.unwrap_or_else(|| {
                     hosts.iter().position(|h| h == &*gethostname()).unwrap()
                 });
