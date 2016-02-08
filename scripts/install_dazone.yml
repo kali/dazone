@@ -63,10 +63,3 @@
       become: true
     - name: symlink data to data
       file: path=dazone/data state=link src=/data/dazone
-  #    - name: generate hosts
-  #      copy:
-  #        dest: ./hosts
-  #        content: |
-  #          {% for host in groups['all'] %}
-  #            {{ hostvars[host]['ansible_eth0']['ipv4']['address'] }}
-  #          {% endfor %}

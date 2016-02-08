@@ -10,6 +10,7 @@
         wait: true
         count: 2
         region: us-east-1
+        group: dazone
         instance_profile_name: S3read
         instance_tags:
           dazone: true

@@ -84,7 +84,6 @@ fn main() {
 
     if matches.is_present("VERBOSE") {
         println!("{:?}", runner);
-        println!("{:?}", matches.value_of("HOSTS"));
     }
 
     let t1 = ::time::get_time();
