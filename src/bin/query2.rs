@@ -101,13 +101,14 @@ fn main() {
 
     let usage = ::dazone::rusage::get_rusage();
     let vmsize = ::dazone::rusage::get_memory_usage().unwrap().virtual_size;
-    println!("{} length: {:2} strat: {:6} buckets: {:4} workers: {:4} rss_mb: {:5} vmmsize_mb: {:5} \
+    println!("{} length: {:2} strat: {:6} buckets: {:4} workers: {:4} hosts: {:2} rss_mb: {:5} vmmsize_mb: {:5} \
               utime_s: {:5} stime_s: {:5} ctime_s: {:5.01} groups: {:9}",
               start.format("%+"),
              length,
              &*runner.strategy,
              runner.buckets,
              runner.workers,
+             runner.hosts.map(|h| h.len()).unwrap_or(0),
              usage.ru_maxrss / 1024 / 1024,
              vmsize / 1024 / 1024,
              usage.ru_utime.tv_sec,
