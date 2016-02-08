@@ -4,6 +4,7 @@ extern crate capnp;
 extern crate capdata as cap;
 #[macro_use]
 extern crate clap;
+extern crate chrono;
 extern crate fnv;
 extern crate time;
 extern crate num_cpus;
@@ -47,6 +48,7 @@ fn main() {
                          (@arg PROGRESS_BAR: --pb "show progress bar")
                        );
     let matches = app.get_matches();
+    let start = chrono::UTC::now();
 
 
     let set = matches.value_of("SET").unwrap_or("5nodes").to_string();
@@ -95,8 +97,9 @@ fn main() {
 
     let usage = ::dazone::rusage::get_rusage();
     let vmsize = ::dazone::rusage::get_memory_usage().unwrap().virtual_size;
-    println!("length: {:2} strat: {:6} buckets: {:4} workers: {:4} rss_mb: {:5} vmmsize_mb: {:5} \
+    println!("{} length: {:2} strat: {:6} buckets: {:4} workers: {:4} rss_mb: {:5} vmmsize_mb: {:5} \
               utime_s: {:5} stime_s: {:5} ctime_s: {:3.01} groups: {:9}",
+              start.format("%+"),
              length,
              &*runner.strategy,
              runner.buckets,

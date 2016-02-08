@@ -8,7 +8,7 @@
         instance_type: m3.xlarge
         image: ami-fce3c696
         wait: true
-        count: 1
+        count: 2
         region: us-east-1
         instance_profile_name: S3read
         instance_tags:
