@@ -46,6 +46,7 @@ fn main() {
                          (@arg HOSTS: -h --hosts +takes_value "hosts, coma sep (for timely)")
                          (@arg ME: --me +takes_value "my position in hosts (starting at 0)")
                          (@arg PROGRESS_BAR: --pb "show progress bar")
+                         (@arg VERBOSE: -v --verbose "verbose")
                        );
     let matches = app.get_matches();
     let start = chrono::UTC::now();
@@ -81,6 +82,10 @@ fn main() {
         me: matches.value_of("ME").map(|x| x.parse().unwrap()),
         monitor: monitor,
     };
+
+    if matches.is_present("VERBOSE") {
+        println!("{:?}", runner);
+    }
 
     let t1 = ::time::get_time();
 
