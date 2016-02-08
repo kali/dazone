@@ -98,7 +98,7 @@ fn main() {
     let usage = ::dazone::rusage::get_rusage();
     let vmsize = ::dazone::rusage::get_memory_usage().unwrap().virtual_size;
     println!("{} length: {:2} strat: {:6} buckets: {:4} workers: {:4} rss_mb: {:5} vmmsize_mb: {:5} \
-              utime_s: {:5} stime_s: {:5} ctime_s: {:3.01} groups: {:9}",
+              utime_s: {:5} stime_s: {:5} ctime_s: {:5.01} groups: {:9}",
               start.format("%+"),
              length,
              &*runner.strategy,
