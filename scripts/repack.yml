@@ -33,3 +33,5 @@
       args:
         chdir: dazone
         creates: data/buren-snz/5nodes/uservisits
+    - name: upload data
+      command: aws s3 sync dazone/data/buren-snz/ s3://kali-bigdata-rust/
