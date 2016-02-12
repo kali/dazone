@@ -1,0 +1,33 @@
+---
+
+- hosts: tag_dazone_True
+  user: ubuntu
+  vars:
+    node_count_with_default: "{{ node_count | default(20)}}"
+    k_with_default: "{{ k | default(8) }}"
+  tasks:
+    - name: generate hosts
+      copy:
+        dest: ./hosts-unsorted
+        content: |
+          {% for host in groups['all'] %}
+            {{ hostvars[host]['ansible_eth0']['ipv4']['address'] }}
+          {% endfor %}
+
+    - name: query2 / {{k}} / timely
+      shell: |
+        cat ~/hosts-unsorted | sort | grep [0-9] | tr -d ' ' > ~/hosts
+        rm -f ~/output
+        touch ~/output
+        sudo sh -c "echo 3 > /proc/sys/vm/drop_caches"
+        ME=`grep -n {{ ansible_eth0.ipv4.address }} ~/hosts | sed 's/:.*//'`
+        if [ "$ME" -le {{ node_count_with_default }} ]
+        then
+          ./target/release/query2 -r timely -k {{ k_with_default }} --hosts `cat ~/hosts | head -{{ node_count_with_default }} \
+            |  tr '\n' ',' | sed 's/,$//'` --me $(($ME-1)) >> ~/output
+        fi
+      args:
+        chdir: dazone
+        executable: /bin/bash
+
+    - fetch: src=output dest=data/run-{{ ansible_date_time.iso8601 }}

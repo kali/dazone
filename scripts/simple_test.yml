@@ -9,6 +9,8 @@
       register: hdparm
     - debug: var=hdparm.stdout_lines
 
+    - name: delete output
+      command: rm -f output
     - name: query2
       shell: |
         sudo sh -c "echo 3 > /proc/sys/vm/drop_caches"
@@ -23,4 +25,4 @@
         - { r: 'timely', k: 10, b:   0, w: "{{ 2*ansible_processor_cores }}"   }
         - { r: 'timely', k: 12, b:   0, w: "{{ 2*ansible_processor_cores+2 }}" }
 
-    - fetch: src=output dest=run-{{ ansible_date_time.iso8601 }}
+    - fetch: src=output dest=data/run-{{ ansible_date_time.iso8601 }}

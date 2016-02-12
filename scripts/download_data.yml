@@ -1,0 +1,30 @@
+---
+
+- hosts: tag_dazone_True
+  user: ubuntu
+  tasks:
+    - name: download data
+      shell: |
+        export SET=5nodes
+        export TABLE=uservisits
+        doit() {
+          file=$1
+          if [ ! -d dazone/data/buren-snz/$SET/$TABLE/${file}_0.buren-snz ]
+          then
+            for i in 1 2 3 4 5
+            do
+              aws s3 sync --quiet s3://kali-bigdata-rust/$SET/$TABLE/${file}_0.buren-snz/ \
+                  dazone/data/buren-snz/$SET/$TABLE/${file}_0.buren-snz.tmp/ && \
+                  break
+              sleep 5
+            done
+            mv dazone/data/buren-snz/$SET/$TABLE/${file}_0.buren-snz.tmp dazone/data/buren-snz/$SET/$TABLE/${file}_0.buren-snz
+          fi
+        }
+        export -f doit
+
+        parallel -j 20 doit ::: `seq -f "%06.f" 0 2036` && echo download ok && \
+        touch dazone/data/buren-snz/5nodes/uservisits/ok
+      args:
+        executable: /bin/bash
+        creates: dazone/data/buren-snz/5nodes/uservisits/ok

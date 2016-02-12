@@ -1,21 +1,21 @@
 ---
+# 2016-02-08T16:44:26 : 5 hosts, c3.8xl (32 proc, 64 workers)
+# 2016-02-09T15:01:54 : 20 hosts, m3.xl (4 proc, 8 workers)
+# 2016-02-10T08:45:43 : 20 hosts, m3.2xl (8 proc, 16 workers)
+# 2016-02-11T08:59:28 : 5 hosts, c3.8xl, PG
 - hosts: localhost
   tasks:
     - name: "start instance"
       register: ec2
       ec2:
         key_name: ec2
-        instance_type: m3.xlarge
+        instance_type: c3.8xlarge
         image: ami-fce3c696
         wait: true
-        count: 2
+        count: 5
+        placement_group: dazone
         region: us-east-1
-        group: dazone
         instance_profile_name: S3read
         instance_tags:
           dazone: true
-    - name: Wait for SSH to come up
-      wait_for: host={{ item.public_dns_name }} port=22 delay=60 timeout=320 state=started
-      with_items: ec2.instances
-
 
