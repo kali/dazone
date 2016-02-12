@@ -89,7 +89,7 @@ fn main() {
     let t1 = ::time::get_time();
 
     let length: usize = matches.value_of("KEY_LENGTH").unwrap_or("8").parse().unwrap();
-    let groups = match length {
+    let (groups, inner_timer) = match length {
         8 => runner.clone().run::<Bytes8>(),
         9 => runner.clone().run::<Bytes9>(),
         10 => runner.clone().run::<Bytes10>(),
@@ -102,7 +102,7 @@ fn main() {
     let usage = ::dazone::rusage::get_rusage();
     let vmsize = ::dazone::rusage::get_memory_usage().unwrap().virtual_size;
     println!("{} length: {:2} strat: {:6} buckets: {:4} workers: {:4} hosts: {:2} rss_mb: {:5} vmmsize_mb: {:5} \
-              utime_s: {:5} stime_s: {:5} ctime_s: {:5.01} groups: {:9}",
+              utime_s: {:5} stime_s: {:5} ctime_s: {:5.01} groups: {:9} inner_time: {:5.01}",
               start.format("%+"),
              length,
              &*runner.strategy,
@@ -114,7 +114,9 @@ fn main() {
              usage.ru_utime.tv_sec,
              usage.ru_stime.tv_sec,
              (t2 - t1).num_milliseconds() as f32 / 1000.0,
-             groups);
+             groups,
+             inner_timer.num_milliseconds() as f32 / 1000.0
+             );
 
 }
 
@@ -168,7 +170,7 @@ impl<I: Iterator<Item = T>, T> Iterator for Sigil<I, T> {
 }
 
 impl Runner {
-    fn run<K>(mut self) -> usize
+    fn run<K>(mut self) -> (usize, time::Duration)
         where K: ShortBytesArray
     {
         if self.strategy == "timely" {
@@ -279,12 +281,13 @@ impl Runner {
         aggregator.len() as usize
     }
 
-    fn run_standalone<K>(&mut self) -> usize
+    fn run_standalone<K>(&mut self) -> (usize, time::Duration)
         where K: ShortBytesArray
     {
+        let t1 = time::get_time();
         let r = |a: &f32, b: &f32| a + b;
         let bibi = self.sharded_input::<K>(0, 1);
-        match &*self.strategy {
+        let groups = match &*self.strategy {
             "hash" => {
                 let mut aggregator = ::dazone::crunch::aggregators::HashMapAggregator::new(&r)
                                          .with_monitor(Some(self.monitor.clone()));
@@ -314,10 +317,12 @@ impl Runner {
                 aggregator.len() as usize
             }
             s => panic!("unknown strategy {}", s),
-        }
+        };
+        let t2 = time::get_time();
+        (groups, t2-t1)
     }
 
-    fn run_timely<K>(self) -> usize
+    fn run_timely<K>(self) -> (usize, time::Duration)
         where K: ShortBytesArray
     {
 
@@ -349,9 +354,15 @@ impl Runner {
 
         let result = sync::Arc::new(sync::atomic::AtomicUsize::new(0));
         let result_to_go = result.clone();
+        let t1:sync::Arc<sync::Mutex<Option<time::Timespec>>> = sync::Arc::new(sync::Mutex::new(None));
+        let t1_to_go = t1.clone();
 
         timely::execute(conf, move |root| {
             use dazone::timely_accumulators::HashMapAccumulator;
+            {
+                let mut t1 = t1_to_go.lock().unwrap();
+                *t1 = Some(time::get_time());
+            }
             let accu: HashMapAccumulator<K, f32, _> = HashMapAccumulator::new(|a: &f32,
                                                                                b: &f32| {
                 a + b
@@ -365,7 +376,8 @@ impl Runner {
             */
             self.run_timely_with_accumulator(accu, result_to_go.clone(), root);
         });
-        result.fetch_add(0, Relaxed)
+        let t1 = t1.lock().unwrap();
+        (result.fetch_add(0, Relaxed), time::get_time() - t1.unwrap())
     }
 
     fn run_timely_with_accumulator<K, A>(&self,
