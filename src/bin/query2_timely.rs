@@ -14,13 +14,15 @@ use dazone::files::compressor::Compressor;
 
 use dazone::crunch::aggregators::update_hashmap;
 
+use timely::progress::timestamp::RootTimestamp;
+
 fn main() {
     timely::execute_from_args(std::env::args(), move |root| {
         let peers = root.peers();
         let index = root.index();
 
         root.scoped::<u64, _, _>(move |builder| {
-            let files = dazone::files::files_for_format("5nodes", "uservisits", "buren-snz");
+            let files = dazone::files::files_for_format("tiny", "uservisits", "buren-snz");
             let files = files.enumerate().filter_map(move |(i, f)| {
                 if i % peers == index {
                     Some(f)
@@ -45,10 +47,9 @@ fn main() {
                                                 ::dazone::hash(&(x.0)) as u64
                                             }),
                                             "group-count",
-                                            vec![],
+                                            vec![RootTimestamp::new(0)],
                                             move |input, output, notif| {
                                                 input.for_each(|time, chunk| {
-                                                    notif.notify_at(time);
                                                     for (k, v) in chunk.drain(..) {
                                                         update_hashmap(&mut hashmap,
                                                                        &|&a, &b| a + b,
@@ -66,7 +67,7 @@ fn main() {
 
             let _: Stream<_, ()> = group.unary_notify(Exchange::new(|_| 0u64),
                                                       "count",
-                                                      vec![],
+                                                      vec![RootTimestamp::new(0)],
                                                       move |input, _, notif| {
                                                           input.for_each(|time, data| {
                                                               notif.notify_at(time);
