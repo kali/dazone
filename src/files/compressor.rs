@@ -19,20 +19,24 @@ impl Compressor {
             "deflate" => Compressor::Deflate,
             "snz" => Compressor::Snappy,
             "lz4" => Compressor::Lz4,
-            _ => panic!("unknown compressor {}", name)
+            _ => panic!("unknown compressor {}", name),
         }
     }
 
     pub fn for_format(name: &str) -> Compressor {
         let tokens: Vec<String> = name.split("-").map(|x| x.to_owned()).collect();
-        Compressor::get(if tokens.len() == 1 { "none" } else { &*tokens[1] } )
+        Compressor::get(if tokens.len() == 1 {
+            "none"
+        } else {
+            &*tokens[1]
+        })
     }
 
-    pub fn read_file<P:AsRef<::std::path::Path>>(&self, name:P) -> Box<io::Read+Send> {
+    pub fn read_file<P: AsRef<::std::path::Path>>(&self, name: P) -> Box<io::Read + Send> {
         self.decompress(::std::fs::File::open(name).unwrap())
     }
 
-    pub fn write_file<P:AsRef<::std::path::Path>>(&self, name:P) -> Box<io::Write> {
+    pub fn write_file<P: AsRef<::std::path::Path>>(&self, name: P) -> Box<io::Write> {
         self.compress(::std::fs::File::create(name).unwrap())
     }
 
@@ -63,4 +67,3 @@ impl Compressor {
         }
     }
 }
-

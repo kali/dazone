@@ -1,19 +1,17 @@
 ---
-# 2016-02-08T16:44:26 : 5 hosts, c3.8xl (32 proc, 64 workers)
-# 2016-02-09T15:01:54 : 20 hosts, m3.xl (4 proc, 8 workers)
-# 2016-02-10T08:45:43 : 20 hosts, m3.2xl (8 proc, 16 workers)
-# 2016-02-11T08:59:28 : 5 hosts, c3.8xl, PG
 - hosts: localhost
   tasks:
     - name: "start instance"
       register: ec2
       ec2:
         key_name: ec2
-        instance_type: c3.8xlarge
+        instance_type: m3.xlarge
+        count: 20
+  #      placement_group: dazone
+  #      instance_type: m3.xlarge
+  #      count: 20
         image: ami-fce3c696
         wait: true
-        count: 5
-        placement_group: dazone
         region: us-east-1
         instance_profile_name: S3read
         instance_tags:

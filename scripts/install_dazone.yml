@@ -4,7 +4,7 @@
   user: ubuntu
   tasks:
     - name: Install list of packages
-      apt: name={{item}} state=installed
+      apt: name={{item}} state=installed update_cache=true
       with_items: ['build-essential', 'git', 'jshon', 'libsnappy-dev', 'mdadm', 'parallel', 'pv' ]
       become: true
     - name: discard /dev/xvdb mount
@@ -63,3 +63,11 @@
       become: true
     - name: symlink data to data
       file: path=dazone/data state=link src=/data/dazone
+    - name: generate hosts
+      copy:
+        dest: ./hosts-unsorted
+        content: |
+          {% for host in groups['all'] %}
+            {{ hostvars[host]['ansible_eth0']['ipv4']['address'] }}
+          {% endfor %}
+
