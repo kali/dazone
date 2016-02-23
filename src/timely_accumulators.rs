@@ -1,5 +1,6 @@
-use std::hash::{Hash, BuildHasher};
+use std::hash::Hash;
 use std::collections::HashMap;
+#[allow(deprecated)]
 use std::collections::hash_state::DefaultState;
 use fnv::FnvHasher;
 
@@ -11,6 +12,7 @@ pub trait SimpleAccumulator<K,V> {
     fn len(&self) -> usize;
 }
 
+#[allow(deprecated)]
 pub struct HashMapAccumulator<K, V, R>
     where R: Sync + Fn(&V, &V) -> V + 'static,
           K: Send + Eq + Hash + 'static,

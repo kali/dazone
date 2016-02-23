@@ -5,8 +5,8 @@
       register: ec2
       ec2:
         key_name: ec2
-        instance_type: m3.xlarge
-        count: 20
+        instance_type: c3.8xlarge
+        count: 1
   #      placement_group: dazone
   #      instance_type: m3.xlarge
   #      count: 20

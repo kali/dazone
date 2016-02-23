@@ -149,6 +149,7 @@ pub struct MultiHashMapAggregator<'a, R, K, V, S>
     hashmaps: Vec<Mutex<HashMap<K, V, S>>>,
     reducer: &'a R,
     partitioner: S,
+    #[allow(dead_code)]
     partial_aggregation: bool,
     monitor: Option<Arc<Monitor>>
 }
@@ -267,6 +268,7 @@ pub struct MultiTrieAggregator<'a, R, K, V>
 {
     tries: Vec<Mutex<Trie<K, V>>>,
     reducer: &'a R,
+    #[allow(dead_code)]
     partial_aggregation: bool,
     monitor: Option<Arc<Monitor>>
 }

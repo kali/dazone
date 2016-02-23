@@ -12,6 +12,8 @@ extern crate capdata;
 extern crate capnp;
 extern crate cbor;
 extern crate csv;
+extern crate timely;
+extern crate differential_dataflow;
 extern crate flate2;
 extern crate fnv;
 extern crate glob;
