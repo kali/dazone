@@ -155,7 +155,8 @@ pub fn get_rusage() -> rusage {
 }
 
 extern "C" {
-    pub fn je_mallctl(name: *const c_char,
+    #[cfg_attr(any(target_os = "macos", target_os = "android"), link_name = "je_mallctl")]
+    pub fn mallctl(name: *const c_char,
                       oldp: *const c_void,
                       oldlenp: *mut i64,
                       newp: *const c_int,
@@ -201,37 +202,37 @@ impl Monitor {
                     unsafe {
                         let size: i64 = ::std::mem::size_of::<i64>() as i64;
                         let epoch: i64 = step as i64;
-                        je_mallctl("epoch\0".as_ptr() as *const i8,
+                        mallctl("epoch\0".as_ptr() as *const i8,
                                    ::std::mem::transmute(&epoch),
                                    ::std::mem::transmute(&size),
                                    ::std::mem::transmute(&epoch),
                                    size);
                         let size: i64 = ::std::mem::size_of::<i64>() as i64;
-                        je_mallctl("stats.allocated\0".as_ptr() as *const i8,
+                        mallctl("stats.allocated\0".as_ptr() as *const i8,
                                    ::std::mem::transmute(&allocated),
                                    ::std::mem::transmute(&size),
                                    ::std::ptr::null(),
                                    0i64);
                         let size: i64 = ::std::mem::size_of::<i64>() as i64;
-                        je_mallctl("stats.active\0".as_ptr() as *const i8,
+                        mallctl("stats.active\0".as_ptr() as *const i8,
                                    ::std::mem::transmute(&active),
                                    ::std::mem::transmute(&size),
                                    ::std::ptr::null(),
                                    0i64);
                         let size: i64 = ::std::mem::size_of::<i64>() as i64;
-                        je_mallctl("stats.metadata\0".as_ptr() as *const i8,
+                        mallctl("stats.metadata\0".as_ptr() as *const i8,
                                    ::std::mem::transmute(&metadata),
                                    ::std::mem::transmute(&size),
                                    ::std::ptr::null(),
                                    0i64);
                         let size: i64 = ::std::mem::size_of::<i64>() as i64;
-                        je_mallctl("stats.resident\0".as_ptr() as *const i8,
+                        mallctl("stats.resident\0".as_ptr() as *const i8,
                                    ::std::mem::transmute(&resident),
                                    ::std::mem::transmute(&size),
                                    ::std::ptr::null(),
                                    0i64);
                         let size: i64 = ::std::mem::size_of::<i64>() as i64;
-                        je_mallctl("stats.mapped\0".as_ptr() as *const i8,
+                        mallctl("stats.mapped\0".as_ptr() as *const i8,
                                    ::std::mem::transmute(&mapped),
                                    ::std::mem::transmute(&size),
                                    ::std::ptr::null(),
