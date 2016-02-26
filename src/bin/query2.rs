@@ -491,6 +491,7 @@ impl Runner {
                 let (input, stream) = builder.new_input::<((K, _), i32)>();
                 let collections = Collection::new(stream);
 
+
                 let group:Collection<_, (K,SaneF32)> = collections.group(|_,vs,o| {
                     let v:f32 = vs.map(|(sane,weight):(&SaneF32,i32)| sane.0*weight as f32).sum();
                     o.push( (SaneF32(v), 1) );
