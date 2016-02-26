@@ -532,7 +532,7 @@ impl Runner {
             let t2 = ::time::get_time();
             if index == 0 {
                 println!("{:3.3}s:  pushed initial batch ({} chunks)",
-                         (t2 - t1).num_milliseconds() as f64 / 100.0,
+                         (t2 - t1).num_milliseconds() as f64 / 1000.0,
                          initial_batch);
             }
             let epoch = *input.epoch();
@@ -544,7 +544,7 @@ impl Runner {
             let t2 = ::time::get_time();
             if index == 0 {
                 println!("{:3.3}s:  stepped over initial batch result:{}",
-                         (t2 - t1).num_milliseconds() as f64 / 100.0,
+                         (t2 - t1).num_milliseconds() as f64 / 1000.0,
                          result.load(Relaxed));
             }
             for chunk in bibi {
@@ -554,7 +554,7 @@ impl Runner {
                 let t2 = ::time::get_time();
                 if index == 0 {
                     println!("{:3.3}s:  pushed batch",
-                             (t2 - t1).num_milliseconds() as f64 / 100.0);
+                             (t2 - t1).num_milliseconds() as f64 / 1000.0);
                 }
                 let epoch = *input.epoch();
                 input.advance_to(epoch + 1);
@@ -564,7 +564,7 @@ impl Runner {
                 let t2 = ::time::get_time();
                 if index == 0 {
                     println!("{:3.3}s:  done step {}, results: {}",
-                             (t2 - t1).num_milliseconds() as f64 / 100.0,
+                             (t2 - t1).num_milliseconds() as f64 / 1000.0,
                              epoch,
                              result.load(Relaxed));
                 }
